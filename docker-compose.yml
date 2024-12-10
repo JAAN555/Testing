@@ -1,111 +1,47 @@
-#version: '3.8'
+version: '3.8'
 
 services:
   db:
-    container_name: db
     image: postgres:16.4
     environment:
       POSTGRES_USER: data_engineer
       POSTGRES_PASSWORD: Pass!w0rd
       POSTGRES_DB: assignment
-      PGUSER: data_engineer # for the psql client
-      PGPASSWORD: Pass!w0rd # for the psql client
-      PGDATABASE: assignment # for the psql client
     ports:
       - "5432:5432"
     volumes:
       - ./pgdata:/var/lib/postgresql/data
-      - ./pgtmp:/tmp
-    networks:
-      - my_network
-
-  py:
-    container_name: py
-    image: python:3.12.5-bookworm
-    stdin_open: true
-    tty: true
-    environment:
-      SCRIPTS_PATH: /scripts
-      API_PATH: https://randomuser.me/api/
-      POSTGRES_USER: data_engineer
-      POSTGRES_PASSWORD: Pass!w0rd
-      POSTGRES_DB: assignment
-    volumes:
-      - ./py_app:/scripts
-      - ./py_data:/data # Changed to py_data instead of data
-      - ./movies:/scripts/movies # Maybe good?
-    networks:
-      - my_network
-
-  pgadmin:
-    container_name: pgadmin
-    image: dpage/pgadmin4
-    environment:
-      PGADMIN_DEFAULT_EMAIL: admin@admin.com
-      PGADMIN_DEFAULT_PASSWORD: root
-    ports:
-      - "5050:80" # type localhost:5050 to access pgAdmin in the browser
     networks:
       - my_network
 
   airflow-webserver:
-    container_name: airflow-webserver
-    image: apache/airflow:2.7.0
+    image: apache/airflow:2.10.3
     environment:
       AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://data_engineer:Pass!w0rd@db:5432/assignment
       AIRFLOW__CORE__FERNET_KEY: BBVT3jrzY-ssk_KaR5FWsuYfpeAbprCq79Ej9HEpjVQ=
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__API__AUTH_BACKENDS: airflow.api.auth.backend.basic_auth
     ports:
       - "8080:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./airflow_data:/data  # Changed to airflow_data instead of data
     networks:
       - my_network
     depends_on:
       - db
+    command: ["webserver"]  # Explicit command for webserver service
 
   airflow-scheduler:
-    container_name: airflow-scheduler
-    image: apache/airflow:2.7.0
+    image: apache/airflow:2.10.3
     environment:
       AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://data_engineer:Pass!w0rd@db:5432/assignment
       AIRFLOW__CORE__FERNET_KEY: BBVT3jrzY-ssk_KaR5FWsuYfpeAbprCq79Ej9HEpjVQ=
       AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    volumes:
-      - ./airflow/dags:/opt/airflow/dags
-      - ./airflow/logs:/opt/airflow/logs
-      - ./airflow/plugins:/opt/airflow/plugins
-      - ./airflow_data:/data  # Again airflow_data
     networks:
       - my_network
     depends_on:
       - db
-      - mongodb
-
-
-  mongodb:
-    image: mongo
-    container_name: mongodb
-    environment:
-      MONGO_INITDB_ROOT_USERNAME: username
-      MONGO_INITDB_ROOT_PASSWORD: password
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-      #- ./mongodb_data:/data  # Changed to mongodb_data
-    networks:
-      - my_network
+    command: ["scheduler"]  # Explicit command for scheduler service
 
 networks:
   my_network:
     driver: bridge
-
-volumes:
-  mongodb_data:
-  airflow_data:
-  py_data:

@@ -1,14 +1,7 @@
-FROM apache/airflow:2.6.0
+FROM apache/airflow:2.10.3
 
-USER root
-
-# Install additional libraries
-RUN apt-get update && apt-get install -y \
-    python3-pip \
-    python3-dev \
-    build-essential
-
+# Copy the requirements.txt into the container
 COPY requirements.txt /requirements.txt
-RUN pip install --no-cache-dir -r /requirements.txt
 
-USER airflow
+# Install the dependencies listed in the requirements.txt
+RUN pip install --no-cache-dir -r /requirements.txt
