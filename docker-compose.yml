@@ -2,69 +2,69 @@ version: '3.8'
 
 services:
   db:
-    image: postgres:16.4
+    image: postgres:13
     environment:
-      POSTGRES_USER: data_engineer
-      POSTGRES_PASSWORD: Pass!w0rd
-      POSTGRES_DB: assignment
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: airflow
+      POSTGRES_PASSWORD: airflow
+      POSTGRES_DB: airflow
     volumes:
-      - ./pgdata:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     networks:
-      - my_network
-    healthcheck:
-      test: ["CMD", "pg_isready", "-U", "data_engineer"]
-      interval: 10s
-      retries: 5
+      - airflow_network
 
   airflow-init:
-    image: apache/airflow:2.6.3
-    entrypoint: /bin/bash
-    command:
-      - -c
-      - |
-        airflow db init
-    environment:
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://data_engineer:Pass!w0rd@db:5432/assignment
-    volumes:
-      - ./dags:/opt/airflow/dags
-      - ./logs:/opt/airflow/logs
-      - ./plugins:/opt/airflow/plugins
-      - ./airflow.db:/usr/local/airflow/airflow.db
+    image: apache/airflow:2.6.1
     depends_on:
-      db:
-        condition: service_healthy
+      - db
+    entrypoint: /bin/bash
+    command: ["-c", "airflow db init && airflow users create --username admin --password admin --firstname Admin --lastname User --role Admin --email admin@example.com"]
+    volumes:
+      - ./airflow/scripts:/scripts
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/data:/opt/airflow/data
+      - ./airflow/logs:/opt/airflow/logs
+    networks:
+      - airflow_network
 
   airflow-webserver:
-    image: apache/airflow:2.10.3
+    image: apache/airflow:2.6.1
+    depends_on:
+      - airflow-init
+      - db
     environment:
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://data_engineer:Pass!w0rd@db:5432/assignment
-      AIRFLOW__CORE__FERNET_KEY: BBVT3jrzY-ssk_KaR5FWsuYfpeAbprCq79Ej9HEpjVQ=
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@db/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
     ports:
       - "8080:8080"
     volumes:
       - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/data:/opt/airflow/data
+      - ./airflow/logs:/opt/airflow/logs
     networks:
-      - my_network
-    depends_on:
-      - db
-    command: ["webserver"]  # Explicit command for webserver service
+      - airflow_network
 
   airflow-scheduler:
-    image: apache/airflow:2.10.3
-    environment:
-      AIRFLOW__CORE__SQL_ALCHEMY_CONN: postgresql+psycopg2://data_engineer:Pass!w0rd@db:5432/assignment
-      AIRFLOW__CORE__FERNET_KEY: BBVT3jrzY-ssk_KaR5FWsuYfpeAbprCq79Ej9HEpjVQ=
-      AIRFLOW__CORE__EXECUTOR: LocalExecutor
-    networks:
-      - my_network
+    image: apache/airflow:2.6.1
     depends_on:
+      - airflow-init
       - db
-    command: ["scheduler"]  # Explicit command for scheduler service
+    environment:
+      - AIRFLOW__CORE__SQL_ALCHEMY_CONN=postgresql+psycopg2://airflow:airflow@db/airflow
+      - AIRFLOW__CORE__EXECUTOR=LocalExecutor
+    volumes:
+      - ./airflow/dags:/opt/airflow/dags
+      - ./airflow/plugins:/opt/airflow/plugins
+      - ./airflow/data:/opt/airflow/data
+      - ./airflow/logs:/opt/airflow/logs
+    networks:
+      - airflow_network
 
 networks:
-  my_network:
+  airflow_network:
     driver: bridge
+
+volumes:
+  postgres_data:
+    driver: local

@@ -15,8 +15,14 @@ def load_to_duckdb():
 
     # Load data into DuckDB
     conn = duckdb.connect(str(database_file))
+    
+    # Load CSV into a Pandas DataFrame
     df = pd.read_csv(csv_file)
-    conn.execute("CREATE TABLE IF NOT EXISTS movies AS SELECT * FROM df")
+    
+    # Store the DataFrame directly into DuckDB
+    conn.execute("CREATE TABLE IF NOT EXISTS movies AS SELECT * FROM df")  # Create table if it doesn't exist
+    conn.execute("INSERT INTO movies SELECT * FROM df")  # Insert data into the table
+    
     conn.close()
 
     print(f"Data loaded into DuckDB database: {database_file}")
