@@ -13,15 +13,18 @@ sys.path.append(str(scripts_path))
 # Import the function from the scripts folder
 from db_utils import load_to_duckdb
 
-# DAG default arguments
-default_args = {
-    'start_date': datetime(2024, 12, 1),
+default_args_dict = {
+    'start_date': airflow.utils.dates.days_ago(0),
+    'concurrency': 1,
+    'schedule_interval': None,
+    'retries': 1,
+    'retry_delay': datetime.timedelta(minutes=5),
 }
 
 # Define the DAG
 dag = DAG(
     'cinema_stocks_pipeline',
-    default_args=default_args,
+    default_args=default_args_dict,
     schedule_interval=None,
     catchup=False,
 )
