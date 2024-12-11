@@ -11,12 +11,6 @@ from datetime import timedelta  # For scheduling
 MONGO_URI = "mongodb://mongodb:27017"
 DB_NAME = "data_pipeline"
 
-# Clean functions
-def clean_movies():
-    df = pd.read_csv('/data/movies/mymoviedb_raw.csv')
-    df['cleaned_title'] = df['title'].str.strip().str.lower()
-    df.to_csv('/data/movies/cleaned_mymoviedb.csv', index=False)
-
 STOCKS_FOLDER = '/data/stocks/'
 MOVIES_FILE = '/data/movies/cleaned_mymoviedb.csv'
 
@@ -37,8 +31,8 @@ def load_to_mongo():
     db = client[DB_NAME]
 
     # Read movies file
-    movies = pd.read_csv(MOVIES_FILE)
-    db.movies.insert_many(movies.to_dict('records'))
+    #movies = pd.read_csv(MOVIES_FILE)
+    #db.movies.insert_many(movies.to_dict('records'))
 
     # Read all stock files
     all_stocks = []  # Collect all stocks data into one DataFrame
@@ -85,8 +79,8 @@ def load_to_duckdb():
     import pandas as pd
 
     base_path = Path(__file__).resolve().parent.parent
-    csv_file = base_path / 'data/movies/cleaned_mymoviedb.csv'
-    database_file = base_path / 'data/movies/movies.db'
+    csv_file = base_path / 'data/A.csv'
+    database_file = base_path / 'data/stocks.db'
 
     conn = duckdb.connect(str(database_file))
     df = pd.read_csv(csv_file)
@@ -112,9 +106,9 @@ with DAG(
     catchup=False,
 ) as dag:
 
-    task1 = PythonOperator(task_id="clean_movies", python_callable=clean_movies)
+    task1 = PythonOperator(task_id="create_duckdb_db", python_callable=create_duckdb_db)
     task3 = PythonOperator(task_id="load_to_mongo", python_callable=load_to_mongo)
     #task4 = PythonOperator(task_id="transform_and_load_to_duckdb", python_callable=transform_and_load_to_duckdb)
-    task4 = PythonOperator(task_id="transform_and_load_to_duckdb", python_callable=load_data_to_duckdb)
+    #task4 = PythonOperator(task_id="transform_and_load_to_duckdb", python_callable=load_data_to_duckdb)
 
-    task1 >> task3 >> task4
+   # task1 >> task3 #>> task4
