@@ -5,6 +5,7 @@ from airflow import DAG
 from airflow.operators.python import PythonOperator
 from datetime import datetime
 import os
+import kagglehub
 #!pip install kagglehub
 import shutil
 import mlcroissant as mlc
@@ -12,57 +13,97 @@ import mlcroissant as mlc
 #from scripts.ingest_from_kaggle import ingest_data_from_kagglehub
 #from scripts.data_filtering import filter_files
 
-import os
-import kagglehub
 
-def ingest_data_from_croissant(dataset_id: str, destination_path: str = "/opt/airflow/dags/datasets/stocks") -> str:
+def ingest_data_from_kagglehub(dataset_id: str, destination_path: str = "/opt/airflow/data_raw/stocks_raw") -> str:
     """
-    Ingest a dataset from Kaggle using mlcroissant and move it to the desired destination folder.
+    Ingest a dataset from Kaggle using kagglehub and move it to the desired destination folder.
 
     Args:
         dataset_id (str): The Kaggle dataset identifier (e.g., 'jacksoncrow/stock-market-dataset').
-        destination_path (str): The local path where the dataset should be moved. Defaults to '/opt/airflow/dags/datasets/stocks'.
+        location_path (str): The local path where the dataset should be moved. Defaults to '/opt/airflow/dags/datasets/stocks'.
 
     Returns:
-        str: Path to the moved dataset files.
+        str: Path to the downloaded dataset folder.
     """
     try:
         print(f"Attempting to download the dataset: {dataset_id}")
         
-        # Fetch the Croissant JSON-LD dataset
-        croissant_dataset = mlc.Dataset(f'www.kaggle.com/datasets/{dataset_id}/croissant/download')
-
-        # Check the record sets in the dataset
-        record_sets = croissant_dataset.metadata.record_sets
-        print(f"Record sets found: {record_sets}")
-
-        # Fetch the records and put them into a DataFrame
-        record_set_df = pd.DataFrame(croissant_dataset.records(record_set=record_sets[0].uuid))
-        
-        # Ensure the destination directory exists
+        # Ensure the destination path exists
         if not os.path.exists(destination_path):
             os.makedirs(destination_path)
+
+        # Download the dataset from Kaggle using kagglehub
+        dataset_path = kagglehub.dataset_download(dataset_id)
         
-        # Define the file path where the records will be saved (CSV or other format)
-        destination_file_path = os.path.join(destination_path, 'stock_market_data.csv')
-
-        # Save the DataFrame to the destination file path
-        record_set_df.to_csv(destination_file_path, index=False)
-        print(f"Dataset successfully moved to: {destination_file_path}")
-
-        # Verify that the file is saved in the destination folder
-        if not os.path.exists(destination_file_path):
-            print(f"Failed to move dataset to: {destination_file_path}")
+        print(f"Dataset downloaded to: {dataset_path}")
+        
+        # Now move the dataset to the desired destination folder
+        destination_full_path = os.path.join(destination_path, os.path.basename(dataset_path))
+        
+        # Move files from the downloaded folder to the destination
+        if os.path.exists(dataset_path):
+            shutil.move(dataset_path, destination_full_path)
+            print(f"Dataset successfully moved to: {destination_full_path}")
+        else:
+            print(f"Failed to find dataset at {dataset_path}")
+            return None
+        
+        # Verify that the dataset files were moved successfully
+        if not os.path.exists(destination_full_path):
+            print(f"Failed to move the dataset to: {destination_full_path}")
             return None
         else:
-            print(f"File successfully moved to: {destination_file_path}")
-            return destination_file_path
+            print(f"Dataset successfully moved to: {destination_full_path}")
+            return destination_full_path
+
     except Exception as e:
         print(f"Failed to download or move the dataset: {dataset_id}")
         print(f"Error: {e}")
         return None
     
 
+def rename_prn_file(stocks_folder: str):
+    try:
+        old_file = os.path.join(stocks_folder, 'PRN.csv')
+        new_file = os.path.join(stocks_folder, 'PRN_1.csv')
+        
+        if os.path.exists(old_file):
+            # Rename the file
+            os.rename(old_file, new_file)
+            print(f"Renamed {old_file} to {new_file}")
+        else:
+            print(f"{old_file} not found!")
+    
+    except Exception as e:
+        print(f"Failed to rename PRN file: {e}")
+
+def modify_symbols_valid_meta(downloaded_folder: str):
+    try:
+        symbols_file = os.path.join(downloaded_folder, 'symbols_valid_meta.csv')
+
+        # Check if the file exists
+        if os.path.exists(symbols_file):
+            # Read the CSV file
+            df = pd.read_csv(symbols_file, header=None)
+            
+            old_value = "Y,PRN,Invesco DWA Industrials Momentum ETF,Q,G,Y,100.0,N,N,,PRN,N"
+            new_value = "Y,PRN_1,Invesco DWA Industrials Momentum ETF,Q,G,Y,100.0,N,N,,PRN,N"
+            
+            df[0] = df[0].replace(old_value, new_value)
+            
+
+            df.to_csv(symbols_file, index=False, header=False)
+            print(f"Modified {symbols_file} successfully.")
+        else:
+            print(f"{symbols_file} not found!")
+
+    except Exception as e:
+        print(f"Failed to modify {symbols_file}: {e}")
+
+def process_files(stocks_folder: str, downloaded_folder: str):
+    rename_prn_file(stocks_folder)
+    modify_symbols_valid_meta(downloaded_folder)
+    
 #Test
 
 import pandas as pd
@@ -141,9 +182,9 @@ dag = DAG(
     # Task to download the stock market dataset
 download_stock_market_task = PythonOperator(
     task_id='download_stock_market_dataset',
-    python_callable=ingest_data_from_croissant,
+    python_callable=ingest_data_from_kagglehub,
     op_args=['jacksoncrow/stock-market-dataset'],  # Dataset ID for stock market
-    op_kwargs={'destination_path': './data/stocks'},  # Specify the destination path
+    op_kwargs={'destination_path': './data_raw/stocks_raw'},  # Specify the destination path
     dag=dag
 )
 
@@ -182,13 +223,18 @@ clean_genres_task = PythonOperator(
 )
 
 
-# Set task dependencies
-
 # Will change a lot
+input_file_namechange = os.path.join(script_dir, '../data_raw/stocks_raw/stocks/')
+output_file_namechange = os.path.join(script_dir, '../data_raw/stocks_raw/stocks/')
 
+stocks_folder = "C:/Users/molsi/datasets/stocks"  
+downloaded_folder = "C:/Users/molsi/datasets"
 
-#load_to_duckdb_task >> query_duckdb_task
+fix_the_filename_repitition_error_in_stocks = PythonOperator(
+    task_id='process_files',
+    python_callable=process_files,
+    op_args=[input_file_namechange, output_file_namechange], 
+    dag=dag,
+)
 
-##download_stock_market_task #>> filter_task
-
-download_stock_market_task >> clean_genres_task ##>> clean_genres_task
+download_stock_market_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
