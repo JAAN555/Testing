@@ -1,3 +1,5 @@
+'''
+
 from airflow import DAG
 from airflow.operators.python_operator import PythonOperator
 from datetime import datetime
@@ -112,3 +114,6 @@ with DAG(
     #task4 = PythonOperator(task_id="transform_and_load_to_duckdb", python_callable=load_data_to_duckdb)
 
    # task1 >> task3 #>> task4
+
+
+   '''

@@ -1,50 +1,82 @@
-import sys
-from pathlib import Path
-import airflow
-from airflow.operators.python import PythonOperator
+import duckdb
+import pandas as pd
 from airflow import DAG
-from datetime import datetime, timedelta
-from scripts.query_duckdb import query_duckdb
+from airflow.operators.python import PythonOperator
+from datetime import datetime
 
-# Add the scripts folder to the Python path
-base_path = Path(__file__).resolve().parent.parent
-scripts_path = base_path / 'scripts'
-sys.path.append(str(scripts_path))
+# Define the function to load data into DuckDB
+def load_to_duckdb():
+    # File path for the source data
+    csv_file_path = 'C:/Users/PC/Documents/Testing/airflow/data/movies/cleaned_mymoviedb.csv'
 
-# Import the function from the scripts folder
-from db_utils import load_to_duckdb
+    # DuckDB database file (creates a new one if it doesn't exist)
+    duckdb_file_path = 'C:/Users/PC/Documents/Testing/airflow/data/movies/database.duckdb'
 
-# Default args for the DAG
-default_args_dict = {
-    'start_date': datetime(2024, 12, 10),  # Set a specific start date
-    'concurrency': 1,
-    'schedule_interval': None,  # Adjust as needed for a schedule
+    # Table name in DuckDB
+    table_name = 'movies'
+
+    # Read the data from CSV using pandas
+    df = pd.read_csv(csv_file_path)
+
+    # Connect to DuckDB and load the data
+    conn = duckdb.connect(duckdb_file_path)
+    conn.execute(f"CREATE TABLE IF NOT EXISTS {table_name} AS SELECT * FROM df LIMIT 0")
+    conn.register('data_frame', df)
+    conn.execute(f"INSERT INTO {table_name} SELECT * FROM data_frame")
+
+    # Print success message
+    print(f"Data successfully loaded into DuckDB table: {table_name}")
+
+# Define the function to query data from DuckDB
+def query_duckdb():
+    # DuckDB database file
+    duckdb_file_path = 'C:/Users/PC/Documents/Testing/airflow/data/movies/database.duckdb'
+
+    # Query to fetch data
+    query = "SELECT * FROM movies LIMIT 10"
+
+    # Connect to DuckDB and execute the query
+    conn = duckdb.connect(duckdb_file_path)
+    result = conn.execute(query).fetchall()
+
+    # Print query result
+    print("Query Results:")
+    for row in result:
+        print(row)
+
+# Define the Airflow DAG
+default_args = {
+    'owner': 'airflow',
+    'depends_on_past': False,
+    'start_date': datetime(2024, 12, 12),
     'retries': 1,
-    'retry_delay': timedelta(minutes=5),
 }
 
-# Define the DAG
 dag = DAG(
-    'cinema_stocks_pipeline',
-    default_args=default_args_dict,
-    schedule_interval=None,  # Adjust if needed for a schedule
-    catchup=False,
+    'load_to_duckdb_dag',
+    default_args=default_args,
+    description='A DAG to load data into DuckDB',
+    schedule_interval=None,  # Adjust as needed
 )
 
-# Define the task for loading data to DuckDB
 load_to_duckdb_task = PythonOperator(
     task_id='load_to_duckdb',
     python_callable=load_to_duckdb,
     dag=dag,
 )
 
-# Define the task for querying DuckDB
+query_dag = DAG(
+    'query_duckdb_dag',
+    default_args=default_args,
+    description='A DAG to query data from DuckDB',
+    schedule_interval=None,  # Adjust as needed
+)
+
 query_duckdb_task = PythonOperator(
     task_id='query_duckdb',
     python_callable=query_duckdb,
-    dag=dag,
+    dag=query_dag,
 )
 
-# Define task dependencies
+# Set task dependencies
 load_to_duckdb_task >> query_duckdb_task
-
