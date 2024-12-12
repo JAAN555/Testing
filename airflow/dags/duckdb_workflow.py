@@ -61,7 +61,7 @@ def create_duckdb_db():
     conn.close()
 
 # Function to load data into DuckDB
-'''
+
 def load_data_to_duckdb():
     client = MongoClient(MONGO_URI)
     db = client[DB_NAME]
@@ -75,7 +75,7 @@ def load_data_to_duckdb():
 
 # Insert the merged DataFrame
 conn.from_df(merged).to_sql('fact_table', conn, if_exists='replace')
-'''
+
 def load_to_duckdb():
     import duckdb
     import pandas as pd

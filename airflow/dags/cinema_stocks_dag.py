@@ -30,7 +30,7 @@ def load_to_duckdb():
 # Define the function to query data from DuckDB
 def query_duckdb():
     # DuckDB database file
-    duckdb_file_path = 'C:/Users/PC/Documents/Testing/airflow/data/movies/database.duckdb'
+    duckdb_file_path = '/opt/airflow/data/movies/database.duckdb'
 
     # Query to fetch data
     query = "SELECT * FROM movies LIMIT 10"
@@ -65,17 +65,11 @@ load_to_duckdb_task = PythonOperator(
     dag=dag,
 )
 
-query_dag = DAG(
-    'query_duckdb_dag',
-    default_args=default_args,
-    description='A DAG to query data from DuckDB',
-    schedule_interval=None,  # Adjust as needed
-)
 
 query_duckdb_task = PythonOperator(
     task_id='query_duckdb',
     python_callable=query_duckdb,
-    dag=query_dag,
+    dag=dag,
 )
 
 # Set task dependencies
