@@ -46,5 +46,5 @@ query_duckdb_task = PythonOperator(
 )
 
 # Define task dependencies
-load_to_duckdb_task >> query_duckdb_task
+#load_to_duckdb_task >> query_duckdb_task
 
