@@ -3,61 +3,69 @@ import sys
 import pandas as pd
 from airflow import DAG
 from airflow.operators.python import PythonOperator
+from pathlib import Path
 from datetime import datetime
 import os
 import kagglehub
 #!pip install kagglehub
 import shutil
+import subprocess
+import zipfile
 import mlcroissant as mlc
 
 #from scripts.ingest_from_kaggle import ingest_data_from_kagglehub
 #from scripts.data_filtering import filter_files
 
 
-def ingest_data_from_kagglehub(dataset_id: str, destination_path: str = "/opt/airflow/data_raw/stocks_raw") -> str:
-    """
-    Ingest a dataset from Kaggle using kagglehub and move it to the desired destination folder.
-
-    Args:
-        dataset_id (str): The Kaggle dataset identifier (e.g., 'jacksoncrow/stock-market-dataset').
-        location_path (str): The local path where the dataset should be moved. Defaults to '/opt/airflow/dags/datasets/stocks'.
-
-    Returns:
-        str: Path to the downloaded dataset folder.
-    """
+def ingest_data_from_kagglehub(dataset_id: str) -> str:
     try:
-        print(f"Attempting to download the dataset: {dataset_id}")
+        # Define the destination directory where data will be saved
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        input_file_namechange = os.path.join(script_dir, '../data_raw/stocks_raw/')
+        #destination_directory = r"C:/Users/molsi/Documents/Testing/airflow/data_raw/stocks_raw"
         
-        # Ensure the destination path exists
-        if not os.path.exists(destination_path):
-            os.makedirs(destination_path)
+        # Make sure the destination directory exists
+        if not os.path.exists(input_file_namechange):
+            print(f"Directory does not exist. Creating: {input_file_namechange}")
+            os.makedirs(input_file_namechange, exist_ok=True)
 
-        # Download the dataset from Kaggle using kagglehub
-        dataset_path = kagglehub.dataset_download(dataset_id)
+        print(f"Destination directory: {input_file_namechange}")
         
-        print(f"Dataset downloaded to: {dataset_path}")
+        # Define the URL for the Kaggle dataset download (using the dataset_id)
+        dataset_url = f"https://www.kaggle.com/api/v1/datasets/download/{dataset_id}"
         
-        # Now move the dataset to the desired destination folder
-        destination_full_path = os.path.join(destination_path, os.path.basename(dataset_path))
-        
-        # Move files from the downloaded folder to the destination
-        if os.path.exists(dataset_path):
-            shutil.move(dataset_path, destination_full_path)
-            print(f"Dataset successfully moved to: {destination_full_path}")
-        else:
-            print(f"Failed to find dataset at {dataset_path}")
-            return None
-        
-        # Verify that the dataset files were moved successfully
-        if not os.path.exists(destination_full_path):
-            print(f"Failed to move the dataset to: {destination_full_path}")
-            return None
-        else:
-            print(f"Dataset successfully moved to: {destination_full_path}")
-            return destination_full_path
+        # Define the path where the zip file will be saved
+        zip_file_path = os.path.join(input_file_namechange, "stock-market-dataset.zip")
+        print(f"ZIP file will be saved to: {zip_file_path}")
 
+        # Use curl to download the dataset zip file
+        print(f"Downloading dataset from {dataset_url}...")
+        curl_command = f"curl -L -o {zip_file_path} {dataset_url}"
+
+        # Execute the curl command
+        subprocess.run(curl_command, shell=True, check=True)
+        print(f"Dataset downloaded to {zip_file_path}")
+
+        # Extract the zip file
+        print(f"Extracting the zip file {zip_file_path}...")
+        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+            zip_ref.extractall(input_file_namechange)
+        print(f"Dataset extracted to {input_file_namechange}")
+
+        # Remove the zip file after extraction
+        os.remove(zip_file_path)
+        print(f"Removed the zip file {zip_file_path}")
+
+        # List the contents of the destination directory to confirm extraction
+        extracted_files = os.listdir(input_file_namechange)
+        print(f"Files in the destination directory: {extracted_files}")
+
+        return input_file_namechange
+
+    except subprocess.CalledProcessError as e:
+        print(f"Error during dataset download using curl: {e}")
+        return None
     except Exception as e:
-        print(f"Failed to download or move the dataset: {dataset_id}")
         print(f"Error: {e}")
         return None
     
@@ -184,7 +192,6 @@ download_stock_market_task = PythonOperator(
     task_id='download_stock_market_dataset',
     python_callable=ingest_data_from_kagglehub,
     op_args=['jacksoncrow/stock-market-dataset'],  # Dataset ID for stock market
-    op_kwargs={'destination_path': './data_raw/stocks_raw'},  # Specify the destination path
     dag=dag
 )
 
