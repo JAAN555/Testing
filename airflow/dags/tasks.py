@@ -133,39 +133,93 @@ while True:
     except OverflowError:
         max_int = int(max_int / 10)
 
-def clean_and_split_genres(input_file, output_file):
-    # Load the dataset
-    df = pd.read_csv(
-        input_file, 
-        encoding='utf-8',
-        delimiter=',',
-        on_bad_lines='skip',  # Skips rows that cause parsing errors
-        engine='python',      # Use the Python parser for more flexibility
-    )
-
-    # Ensure 'Genre' column exists
-    if 'Genre' not in df.columns:
-        raise ValueError("The dataset does not have a 'Genre' column.")
-
-    # Split the 'Genre' column into individual genres and find unique genres
-    genres = df['Genre'].dropna().str.split(', ').explode().unique()
-
-    # Create a new binary column for each genre
-    for genre in genres:
-        df[genre] = df['Genre'].apply(
-            lambda x: 1 if isinstance(x, str) and genre in x.split(', ') else 0
+def clean_and_split_genres(input_file: str, output_file: str):
+    """
+    Cleans the movie dataset by splitting the 'Genre' column into binary columns 
+    for each unique genre and saves the updated dataset to a new CSV file.
+    
+    Args:
+        input_file (str): Path to the input CSV file.
+        output_file (str): Path to save the cleaned CSV file.
+    """
+    try:
+        # Load the dataset
+        df = pd.read_csv(
+            input_file,
+            encoding='utf-8',
+            delimiter=',',
+            on_bad_lines='skip',  # Skips problematic rows
+            engine='python'       # Flexible parsing for complex CSVs
         )
 
-    # Drop the original 'Genre' column
-    df.drop(columns=['Genre'], inplace=True)
+        # Ensure 'Genre' column exists
+        if 'Genre' not in df.columns:
+            raise ValueError("The dataset does not have a 'Genre' column.")
 
-    # Save the cleaned dataset to a new CSV file
-    df.to_csv(output_file, index=False)
-    print(f"Cleaned dataset saved to {output_file}")
+        # Generate unique genres
+        genres = df['Genre'].dropna().str.split(', ').explode().unique()
 
-script_dir = os.path.dirname(os.path.abspath(__file__))
+        # Add binary columns for each genre
+        for genre in genres:
+            df[genre] = df['Genre'].apply(
+                lambda x: 1 if isinstance(x, str) and genre in x.split(', ') else 0
+            )
+
+        # Drop the original 'Genre' column
+        df.drop(columns=['Genre'], inplace=True)
+
+        # Save the cleaned dataset
+        df.to_csv(output_file, index=False)
+        print(f"Cleaned dataset saved to {output_file}")
+
+    except Exception as e:
+        print(f"Error while cleaning and splitting genres: {e}")
+        raise
+
+#script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Test ends
+
+def filter_files(input_path, output_path, meta_file_path):
+    """
+    Filters stock data files from the input_path based on a predefined list
+    and writes the valid files into output_path.
+    """
+     # File list, mida soovime säilitada
+    file_list = [
+        "A", "AA", "AACG", "AAL", "AAN", "AAOI", "AAON", "AAP", "AAU", "B", "DIS",
+        "BWA", "SNE", "PGRE", "UVV", "LGF.B", "NFLX", "REG", "SPOT", "ROKU", "AMZN",
+        "TME", "IQ", "BILI", "ZNGA", "ATVI", "EA", "NTES", "TTWO", "MAT", "HAS", "FNKO",
+        "CZR", "SIX", "ORCL", "HPQ", "DELL", "AAPL", "MSFT", "TSLA", "NVDA", "AMD",
+        "LPL", "BAX", "JNJ", "PFE", "NVS", "AZN", "MRK", "MDT", "BSX", "NKE", "PBYI",
+        "UAA", "PG", "PLNT", "PTON", "LULU", "FSLR", "WMT", "COST", "HD", "UNH", "CVS",
+        "GOOG", "GOOGL", "BAC", "C", "EAD", "GBIL", "CVX", "MPC", "PSX", "PSXP", "CCZ",
+        "VZ", "CHTR", "DIS", "ALL", "AIG", "MCD", "SBUX", "DPZ", "F", "GM"
+    ]
+
+       # Create the output directory if it doesn't exist
+    if not os.path.exists(output_path):
+        os.makedirs(output_path)
+
+    # Process files in the input path
+    for filename in os.listdir(input_path):
+        # Check if the file is a CSV and if it is in the file_list (consider the first part of the filename)
+        if filename.endswith('.csv') and filename[:-4] in file_list:
+            print(f"Matching file: {filename[:-4]}")  # Debugging line
+            src_file = os.path.join(input_path, filename)  
+            dest_file = os.path.join(output_path, filename)
+            shutil.copy(src_file, dest_file)  # Move the file
+
+    # Preserve "symbols_valid_meta.csv" if present
+    if os.path.exists(meta_file_path):
+        shutil.copy(meta_file_path, os.path.join(output_path, 'symbols_valid_meta.csv'))
+    else:
+        print("symbols_valid_meta.csv not found, but it should be kept.")
+
+    print(f"Filtering completed. Valid files are in '{output_path}'.")
+
+
+# Done
 
 
 # Define the Airflow DAG
@@ -201,6 +255,21 @@ download_stock_market_task = PythonOperator(
     op_kwargs={'zip_file_path': 'stock-market-dataset.zip', 'location':'stocks_raw'},
     dag=dag
 )
+'''   # Define paths
+base_path = './data/'
+input_path = os.path.join(base_path, 'stocks_raw')
+output_path = os.path.join(base_path, 'stocks')
+
+# Set the meta_file_path to the correct location inside 'stocks_raw'
+meta_file_path = os.path.join(input_path, 'symbols_valid_meta.csv')
+
+# Task: Filter files
+filter_task = PythonOperator(
+    task_id='filter_files_task',
+    python_callable=filter_files,
+    op_args=[input_path, output_path, meta_file_path],  # Pass paths as args
+)
+'''
 
 # Task to filter stock market dataset
 '''filter_task = PythonOperator(
@@ -224,25 +293,50 @@ query_duckdb_task = PythonOperator(
 '''
 
 
+# Define the task for cleaning and splitting genres
 script_dir = os.path.dirname(os.path.abspath(__file__))
-input_file = os.path.join(script_dir, '../data/movies/mymoviedb_raw.csv')
-output_file = os.path.join(script_dir, '../data/movies/cleaned_mymoviedb2.csv')
+movies_raw_dir = os.path.join(script_dir, '../data/movies_raw/')
+movies_cleaned_dir = os.path.join(script_dir, '../data/movies/')
 
-# Define the PythonOperator task
+# Ensure directories exist
+os.makedirs(movies_raw_dir, exist_ok=True)
+os.makedirs(movies_cleaned_dir, exist_ok=True)
+
+input_file = os.path.join(movies_raw_dir, 'mymoviedb.csv')
+output_file = os.path.join(movies_cleaned_dir, 'cleaned_mymoviedb.csv')
+
 clean_genres_task = PythonOperator(
     task_id='clean_and_split_genres',
     python_callable=clean_and_split_genres,
-    op_args=[input_file, output_file],  # Pass input and output file paths
+    op_args=[input_file, output_file],
     dag=dag,
 )
 
-
 # Will change a lot
+#base_path = './data/'
+#input_path = os.path.join(base_path, 'stocks_raw/stocks')  # Correct input path to 'stocks_raw'
+#output_path = os.path.join(base_path, 'stocks')  # Correct output path to 'stocks'
+
+# Set the meta_file_path to the correct location inside 'stocks_raw'
+#meta_file_path = os.path.join(os.path.join(base_path, 'stocks_raw'), 'stocks', 'symbols_valid_meta.csv')
+
+input_path = os.path.abspath('./data/stocks_raw/stocks')  # Absolute path to the 'stocks' directory
+output_path = os.path.abspath('./data/stocks')  # Absolute path to the destination directory
+meta_file_path = os.path.abspath('./data/stocks_raw/symbols_valid_meta.csv')  # Path to the meta file
+
+
+
+# Task: Filter files
+filter_task = PythonOperator(
+    task_id='filter_files_task',
+    python_callable=filter_files,
+    op_args=[input_path, output_path, meta_file_path],  # Pass paths as args
+)
+
+
 input_file_namechange = os.path.join(script_dir, '../data_raw/stocks_raw/stocks/')
 output_file_namechange = os.path.join(script_dir, '../data_raw/stocks_raw/stocks/')
 
-stocks_folder = "C:/Users/molsi/datasets/stocks"  
-downloaded_folder = "C:/Users/molsi/datasets"
 
 fix_the_filename_repitition_error_in_stocks = PythonOperator(
     task_id='process_files',
@@ -251,4 +345,6 @@ fix_the_filename_repitition_error_in_stocks = PythonOperator(
     dag=dag,
 )
 
-download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
+#download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
+clean_genres_task >> filter_task
+#filter_task
