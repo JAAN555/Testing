@@ -17,11 +17,11 @@ import mlcroissant as mlc
 #from scripts.data_filtering import filter_files
 
 
-def ingest_data_from_kagglehub(dataset_id: str) -> str:
+def ingest_data_from_kagglehub(dataset_id: str, zip_file_path: str, location: str) -> str:
     try:
         # Define the destination directory where data will be saved
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        input_file_namechange = os.path.join(script_dir, '../data_raw/stocks_raw/')
+        input_file_namechange = os.path.join(script_dir, f'../data_raw/{location}/')
         #destination_directory = r"C:/Users/molsi/Documents/Testing/airflow/data_raw/stocks_raw"
         
         # Make sure the destination directory exists
@@ -29,13 +29,19 @@ def ingest_data_from_kagglehub(dataset_id: str) -> str:
             print(f"Directory does not exist. Creating: {input_file_namechange}")
             os.makedirs(input_file_namechange, exist_ok=True)
 
+        check_file = os.path.join(input_file_namechange, "symbols_valid_meta.csv")
+        if os.path.exists(check_file):
+            print(f"Data already exists in {input_file_namechange}. Skipping download.")
+            return input_file_namechange
+        else:
+            print("check_file stocks_raw.csv does not exist")
+
         print(f"Destination directory: {input_file_namechange}")
         
         # Define the URL for the Kaggle dataset download (using the dataset_id)
         dataset_url = f"https://www.kaggle.com/api/v1/datasets/download/{dataset_id}"
         
         # Define the path where the zip file will be saved
-        zip_file_path = os.path.join(input_file_namechange, "stock-market-dataset.zip")
         print(f"ZIP file will be saved to: {zip_file_path}")
 
         # Use curl to download the dataset zip file
@@ -171,7 +177,7 @@ default_args = {
 }
 
 dag = DAG(
-    'download_stock_market_dataset',
+    'download_stock_market_and_movies_datasets',
     default_args=default_args,
     description='A DAG to load data into DuckDB',
     schedule_interval=None,  # Adjust as needed
@@ -179,19 +185,20 @@ dag = DAG(
 
 
 # Task to download the 9000 movies dataset
-'''download_movies_task = PythonOperator(
+download_movies_task = PythonOperator(
     task_id='download_9000_movies_dataset',
     python_callable=ingest_data_from_kagglehub,
     op_args=['disham993/9000-movies-dataset'],  # Dataset ID for 9000 movies
-    op_kwargs={'destination_path': './data/movies'},
+    op_kwargs={'zip_file_path': 'movies_9000.zip', 'location':'movies_raw'},
     dag = dag,
-)'''
+)
 
     # Task to download the stock market dataset
 download_stock_market_task = PythonOperator(
     task_id='download_stock_market_dataset',
     python_callable=ingest_data_from_kagglehub,
     op_args=['jacksoncrow/stock-market-dataset'],  # Dataset ID for stock market
+    op_kwargs={'zip_file_path': 'stock-market-dataset.zip', 'location':'stocks_raw'},
     dag=dag
 )
 
@@ -244,4 +251,4 @@ fix_the_filename_repitition_error_in_stocks = PythonOperator(
     dag=dag,
 )
 
-download_stock_market_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
+download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
