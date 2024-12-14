@@ -1014,15 +1014,15 @@ DUCKDB_PATH = "data/warehouse.duckdb"
 def create_fact_movie_impact():
     conn = duckdb.connect(DUCKDB_PATH)
     query = """
-CREATE TABLE IF NOT EXISTS Fact_Movie_Impact AS
+    CREATE TABLE IF NOT EXISTS Fact_Movie_Impact AS
     SELECT
         movies.Movie_ID,
-        movies.Popularity AS Popularity_Score,
-        movies.Vote_Average,
         movies.Release_Date,
-        Dim_Company_Sector.Sector_ID
+        Dim_Company_Sector.Sector_ID,
+        movies.Popularity AS Popularity_Score,
+        movies.Vote_Average
     FROM movies
-    JOIN Dim_Movie ON movies.Movie_ID = Dim_Movie.Movie_ID
+    CROSS JOIN Dim_Company_Sector;
     
     """
     conn.execute(query)
@@ -1072,7 +1072,74 @@ def verify_fact_movie_impact():
     describe_fact_movie_impact()
     check_fact_movie_impact_exists()
 
+# Now Dim_Time
 
+DUCKDB_PATH = "data/warehouse.duckdb"
+def create_dim_time():
+    conn = duckdb.connect(DUCKDB_PATH)
+    query = """
+    CREATE TABLE IF NOT EXISTS Dim_Time AS
+    WITH MinMaxDates AS (
+        SELECT 
+            MIN(Date) AS MinDate,
+            MAX(Date) AS MaxDate
+        FROM (
+            SELECT MIN(Release_Date) AS Date FROM movies_data_source
+            UNION ALL
+            SELECT MIN(Date) AS Date FROM stocks_data_source
+        ) AS CombinedDates
+    ),
+    Dates_Generated AS (
+        SELECT 
+            Date::DATE AS Date,
+            EXTRACT(YEAR FROM Date) AS Year,
+            EXTRACT(MONTH FROM Date) AS Month,
+            EXTRACT(DAY FROM Date) AS Day,
+            CEIL(EXTRACT(MONTH FROM Date) / 3.0) AS Quarter,
+            TO_CHAR(Date, 'Day') AS Weekday
+        FROM generate_series(
+            (SELECT MinDate FROM MinMaxDates), 
+            (SELECT MaxDate FROM MinMaxDates), 
+            '1 day'::INTERVAL
+        ) AS Date
+    )
+    SELECT 
+        Date,
+        Year,
+        Month,
+        Day,
+        Quarter,
+        Weekday
+    FROM Dates_Generated;
+    """
+    conn.execute(query)
+
+
+
+
+def count_dim_time():
+    conn = duckdb.connect(DUCKDB_PATH)
+    row_count = conn.execute("SELECT COUNT(*) AS total_rows FROM Dim_Time").fetchone()
+    print(f"Total rows in Dim_Time table: {row_count[0]}")
+
+def describe_dim_time():
+    conn = duckdb.connect(DUCKDB_PATH)
+    schema = conn.execute("DESCRIBE Dim_Time").fetchdf()
+    print(schema)
+
+def check_dim_time_exists():
+    conn = duckdb.connect(DUCKDB_PATH)
+    tables = conn.execute("SHOW TABLES").fetchdf()
+    if 'Dim_Time' in tables.values:
+        print("The 'Dim_Time' table exists.")
+    else:
+        print("The 'Dim_Time' table does not exist.")
+
+def verify_dim_time():
+    view_dim_time()
+    count_dim_time()
+    describe_dim_time()
+    check_dim_time_exists()   
 
 # Define the Airflow DAG
 default_args = {
@@ -1326,9 +1393,24 @@ recreate_task = PythonOperator(
     python_callable=recreate_tables,
     dag=dag,
 )
+
+# Airflow task to create the Dim_Time table
+create_dim_time_task = PythonOperator(
+    task_id='create_dim_time',
+    python_callable=create_dim_time,
+    dag=dag,
+)
+
+# Airflow task to verify the Dim_Time table
+verify_dim_time_task = PythonOperator(
+    task_id='verify_fact_dim_time',
+    python_callable=verify_dim_time,
+    dag=dag,
+)
+
 #download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
 #clean_genres_task >> filter_task >> load_movies_task
 #filter_task
 
-download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> create_fact_sector_stock_performance_task >> verify_fact_sector_stock_performance_task >> create_fact_movie_impact_task >> verify_fact_movie_impact_task >> recreate_task
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> create_fact_sector_stock_performance_task >> verify_fact_sector_stock_performance_task >> create_fact_movie_impact_task >> verify_fact_movie_impact_task >> create_dim_time_task >> verify_dim_time_task >> recreate_task
 #create_dim_company_sector_task >> verify_dim_company_sector_task
