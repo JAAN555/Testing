@@ -432,6 +432,177 @@ def check_stocks_table_exists():
         print("The 'stocks' table does not exist.")
 
 
+# Modifying symbols_valid_meta table
+
+
+# Shared DuckDB connection
+DUCKDB_PATH = "data/warehouse.duckdb"
+duckdb_connection = duckdb.connect(DUCKDB_PATH)
+
+def add_sector_names_to_meta():
+    # List of symbols to filter
+    valid_symbols = [
+        "A", "AA", "AACG", "AAL", "AAN", "AAOI", "AAON", "AAP", "AAU", "B", "DIS", "BWA", "SNE", "PGRE", "UVV", 
+        "LGF.B", "NFLX", "REG", "SPOT", "ROKU", "AMZN", "TME", "IQ", "BILI", "ZNGA", "ATVI", "EA", "NTES", "TTWO", 
+        "MAT", "HAS", "FNKO", "CZR", "SIX", "ORCL", "HPQ", "DELL", "AAPL", "MSFT", "TSLA", "NVDA", "AMD", "LPL", "BAX", 
+        "JNJ", "PFE", "NVS", "AZN", "MRK", "MDT", "BSX", "NKE", "PBYI", "UAA", "PG", "PLNT", "PTON", "LULU", "FSLR", 
+        "WMT", "COST", "HD", "UNH", "CVS", "GOOG", "GOOGL", "BAC", "C", "EAD", "GBIL", "CVX", "MPC", "PSX", "PSXP", "CCZ", 
+        "VZ", "CHTR", "DIS", "ALL", "AIG", "MCD", "SBUX", "DPZ", "F", "GM"
+    ]
+    
+    # Manually created mapping for Sector_Name for each valid symbol (you can refine or fetch this mapping from a source)
+    sector_mapping = {
+        "A": "Healthcare equipment and services",
+        "AA": "Heavy Industry",
+        "AACG": "International Education",
+        "AAL": "Aviation",
+        "AAN": "Furniture",
+        "AAOI": "Telecommunications",
+        "AAON": "Heating, Ventilating and Air Conditioning",
+        "AAP": "Auto Parts Retail",
+        "AAU": "Minerals",
+        "B": "Industrial Technology and Aerospace Manufacturing",
+        "DIS": "Entertainment and Filmmaking",
+        "BWA": "Automotive and energy",
+        "SNE": "Technology and hardware",
+        "PGRE": "Healthcare",
+        "UVV": "Petroleum industry",
+        "LGF.B": "Entertainment and Filmmaking",
+        "NFLX": "Streaming and content",
+        "REG": "Retail and cloud computing",
+        "SPOT": "Streaming and content",
+        "ROKU": "Gaming and interactive entertainment",
+        "AMZN": "Retail and cloud computing",
+        "TME": "Technology and cloud computing",
+        "IQ": "Streaming and content",
+        "BILI": "Gaming and interactive entertainment",
+        "ZNGA": "Toys and peripherals",
+        "ATVI": "Gaming and interactive entertainment",
+        "EA": "Gaming and interactive entertainment",
+        "NTES": "Technology and cloud computing",
+        "TTWO": "Gaming and interactive entertainment",
+        "MAT": "Toys and peripherals",
+        "HAS": "Toys and peripherals",
+        "FNKO": "Toys and peripherals",
+        "CZR": "Gaming and interactive entertainment",
+        "SIX": "Gaming and interactive entertainment",
+        "ORCL": "Technology",
+        "HPQ": "Technology and hardware",
+        "DELL": "Technology and hardware",
+        "AAPL": "Technology and hardware",
+        "MSFT": "Technology and cloud computing",
+        "TSLA": "Automotive and energy",
+        "NVDA": "Technology",
+        "AMD": "Technology",
+        "LPL": "Technology and hardware",
+        "BAX": "Medical and health",
+        "JNJ": "Medical and health",
+        "PFE": "Medical and health",
+        "NVS": "Medical and health",
+        "AZN": "Medical and health",
+        "MRK": "Medical and health",
+        "MDT": "Medical and health",
+        "BSX": "Medical and health",
+        "NKE": "Sports",
+        "PBYI": "Healthcare",
+        "UAA": "Sports",
+        "PG": "Retail",
+        "PLNT": "Healthcare",
+        "PTON": "Healthcare",
+        "LULU": "Retail",
+        "FSLR": "Energy",
+        "WMT": "Retail",
+        "COST": "Retail",
+        "HD": "Retail",
+        "UNH": "Healthcare",
+        "CVS": "Healthcare",
+        "GOOG": "Technology and cloud computing",
+        "GOOGL": "Technology and cloud computing",
+        "BAC": "Financials",
+        "C": "Financials",
+        "EAD": "Financials",
+        "GBIL": "Financials",
+        "CVX": "Petroleum industry",
+        "MPC": "Petroleum industry",
+        "PSX": "Petroleum industry",
+        "PSXP": "Petroleum industry",
+        "CCZ": "Petroleum industry",
+        "VZ": "Telecommunications",
+        "CHTR": "Telecommunications",
+        "DIS": "Entertainment and Filmmaking",
+        "ALL": "Insurance",
+        "AIG": "Insurance",
+        "MCD": "Food service provider",
+        "SBUX": "Food service provider",
+        "DPZ": "Food service provider",
+        "F": "Automotive industry",
+        "GM": "Automotive industry"
+    }
+    # Alter the table to add Sector_Name column if not already present
+    alter_query = """
+    ALTER TABLE symbols_valid_meta ADD COLUMN IF NOT EXISTS Sector_Name STRING;
+    """
+    duckdb_connection.execute(alter_query)
+    print("Sector_Name column added to symbols_valid_meta (if it doesn't exist).")
+    
+    # Remove rows where Symbol is not in valid_symbols list
+    delete_query = """
+    DELETE FROM symbols_valid_meta
+    WHERE Symbol NOT IN ({})
+    """.format(', '.join([f"'{symbol}'" for symbol in valid_symbols]))
+    
+    duckdb_connection.execute(delete_query)
+    print("Rows without valid symbols removed from symbols_valid_meta.")
+    
+    
+    # Construct the update query
+    query = """
+    WITH filtered_symbols AS (
+        SELECT * 
+        FROM symbols_valid_meta
+        WHERE Symbol IN ({}))
+    UPDATE symbols_valid_meta
+    SET Sector_Name = CASE
+    """.format(', '.join([f"'{symbol}'" for symbol in valid_symbols]))
+
+    # Add the sector mappings to the CASE statement
+    for symbol, sector in sector_mapping.items():
+        query += f"WHEN Symbol = '{symbol}' THEN '{sector}'\n"
+
+    query += "END\n"
+    
+    # Execute the update query
+    duckdb_connection.execute(query)
+    print("Sector_Name column updated in symbols_valid_meta.")
+
+# Checking if everything is correct
+
+def view_new_table():
+    result = duckdb_connection.execute("SELECT * FROM symbols_valid_meta LIMIT 5").fetchdf()
+    print(result)
+
+def count_new_table():
+    row_count = duckdb_connection.execute("SELECT COUNT(*) AS total_rows FROM symbols_valid_meta").fetchone()
+    print(f"Total rows in symbols_valid_meta table: {row_count[0]}")
+
+def describe_new_table():
+    schema = duckdb_connection.execute("DESCRIBE symbols_valid_meta").fetchdf()
+    print(schema)
+
+def check_new_table_exists():
+    tables = duckdb_connection.execute("SHOW TABLES").fetchdf()
+    if 'symbols_valid_meta' in tables.values:
+        print("The 'symbols_valid_meta' table exists.")
+    else:
+        print("The 'symbols_valid_meta' table does not exist.")
+
+def verify_new_table():
+    view_new_table()
+    check_new_table_exists()
+    count_new_table()
+    describe_new_table()
+
+
 
 # Define the Airflow DAG
 default_args = {
@@ -606,11 +777,22 @@ def verify_stocks():
 verify_task2 = PythonOperator(
     task_id="verify_stocks",
     python_callable=verify_stocks,
-    dag=dag
+    dag=dag,
 )
 
+modify_meta_file = PythonOperator(
+    task_id="modify_meta_file",
+    python_callable=add_sector_names_to_meta,
+    dag = dag,
+)
+
+verify_new_table_task = PythonOperator(
+    task_id="verify_new_table",
+    python_callable=verify_new_table,
+    dag=dag,
+)
 #download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
 #clean_genres_task >> filter_task >> load_movies_task
 #filter_task
 
-download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >> load_movies_task >> verify_task >> load_stocks_task >> verify_task2
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >> load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task
