@@ -1,9 +1,9 @@
 # Cinema-Stocks---Data-Engineering
 Data Engineering course's project
 
-The datasets used: https://www.kaggle.com/datasets/disham993/9000-movies-dataset and https://www.kaggle.com/datasets/jacksoncrow/stock-market-dataset.
+The datasets used: https://www.kaggle.com/datasets/disham993/9000-movies-dataset and https://www.kaggle.com/datasets/jacksoncrow/stock-market-dataset. Our project focuses on stocks and movies. We want to find out with our project how major movie release affect overall stock market performance of different sectors on or around the release date, how certain movie genres influence stock market performance in different sectors and how timing of a movie release affects stock market volatility across those sectors.  
 
-Our project has many tasks inside our DAG. You can trigger the DAG by doing "cd airflow", "docker-compose up -d", wait a little bit until the web server starts, log in with credentials (username is airflow and password is airflow), find the DAG called "download_stock_market_dataset" and trigger it. For all tasks to take effect it might take some time because the downloaded datasets are huge. 
+We used Airflow for task orchestration. Our project has many tasks inside our DAG. You can trigger the DAG by doing "cd airflow", "docker-compose up -d", wait a little bit until the web server starts, log in with credentials (username is airflow and password is airflow), find the DAG called "download_stock_market_dataset" and trigger it. For all tasks to take effect it might take some time because the downloaded datasets are huge. 
 
 At first, we properly ingests the data from Kaggle, clean it and then load cleaned data into DuckDB for data storage where we do some transformations and model the data by using star schema. 
 
