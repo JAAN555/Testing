@@ -323,11 +323,37 @@ def recreate_tables():
         # Drop tables if they exist (optional)
         conn.execute("DROP TABLE IF EXISTS Dim_Movie")
         conn.execute("DROP TABLE IF EXISTS Dim_Company_Sector")
+        conn.execute("DROP TABLE IF EXISTS Fact_Sector_Stock_Performance")
         # Now recreate the tables
         create_dim_movie()  # Your table creation function
         verify_dim_movie()
         create_dim_company_sector()  # Your table creation function
         verify_dim_company_sector()
+        create_fact_sector_stock_performance()
+        verify_fact_sector_stock_performance()
+        
+
+        pd.set_option('display.max_columns', None)  # Show all columns
+        pd.set_option('display.max_rows', None)     # Show all rows
+        pd.set_option('display.max_colwidth', None) # Show full content of each column
+        pd.set_option('display.width', None)        # Set unlimited width for large dataframes
+
+        # Connect to DuckDB and execute the query
+        conn = duckdb.connect(DUCKDB_PATH)
+        result = conn.execute("SELECT * FROM Fact_Sector_Stock_Performance LIMIT 100").fetchdf()
+
+        # Print the result DataFrame
+        print(result)
+
+        # Reset the display options to avoid affecting other parts of the program
+        pd.reset_option('display.max_columns')
+        pd.reset_option('display.max_rows')
+        pd.reset_option('display.max_colwidth')
+        pd.reset_option('display.width')
+
+
+
+
     finally:
         conn.close()
 
@@ -411,7 +437,7 @@ def load_stocks_to_duckdb():
         df = pd.read_csv(file)
         
         # Create the Stock_ID based on the filename (e.g., Stock_A, Stock_AA, Stock_LGF.B)
-        stock_id = "Stock_" + os.path.splitext(os.path.basename(file))[0]
+        stock_id = os.path.splitext(os.path.basename(file))[0] # CHANGEEEEEE
         df['Stock_ID'] = stock_id  # Add the Stock_ID feature
         
         all_stocks.append(df)
@@ -807,42 +833,67 @@ def verify_dim_company_sector():
 DUCKDB_PATH = "data/warehouse.duckdb"
 
 def create_fact_sector_stock_performance():
-    # Establish a connection to DuckDB
+    # Connect to the DuckDB database
     conn = duckdb.connect(DUCKDB_PATH)
-    
-    # SQL query to create the Fact_Sector_Stock_Performance table and insert aggregated data
+
+    # Define the query to create and populate the Fact_Sector_Stock_Performance table
     query = """
     CREATE TABLE IF NOT EXISTS Fact_Sector_Stock_Performance AS
-    WITH Sector_Stock_Aggregate AS (
+    WITH Sector_Stock_Data AS (
         SELECT
-            s.Date,
-            sc.Sector_ID,
-            AVG(s.Close) AS Average_Close_Price,
-            ((AVG(s.Close) - LAG(AVG(s.Close)) OVER (PARTITION BY sc.Sector_ID ORDER BY s.Date)) / LAG(AVG(s.Close)) OVER (PARTITION BY sc.Sector_ID ORDER BY s.Date)) * 100 AS Price_Change_Percent,
-            STDDEV(s.Close) AS Volatility,
-            SUM(s.Volume) AS Volume
-        FROM stocks s
-        JOIN Dim_Company_Sector sc ON s.Stock_ID = sc.Symbol
-        GROUP BY s.Date, sc.Sector_ID
+            stocks.Date,
+            Dim_Company_Sector.Sector_ID,
+            AVG(stocks.Close) AS Average_Close_Price,
+            STDDEV(stocks.Close) AS Volatility,
+            SUM(stocks.Volume) AS Volume
+        FROM
+            stocks
+        JOIN
+            Dim_Company_Sector
+            ON stocks.Stock_ID = Dim_Company_Sector.Symbol
+        GROUP BY
+            stocks.Date, Dim_Company_Sector.Sector_ID
+    ),
+    Sector_Performance AS (
+        SELECT
+            Date,
+            Sector_ID,
+            Average_Close_Price,
+            Volatility,
+            Volume,
+            LAG(Average_Close_Price) OVER (PARTITION BY Sector_ID ORDER BY Date) AS Previous_Close_Price
+        FROM
+            Sector_Stock_Data
+    ),
+    Final_Table AS (
+        SELECT
+            Date,
+            Sector_ID,
+            Average_Close_Price,
+            (Average_Close_Price - Previous_Close_Price) / Previous_Close_Price * 100 AS Price_Change_Percent,
+            Volatility,
+            Volume
+        FROM
+            Sector_Performance
     )
-    -- Insert the aggregated data into Fact_Sector_Stock_Performance
-    SELECT 
-        Sector_ID,
+    SELECT
         Date,
+        Sector_ID,
         Average_Close_Price,
         Price_Change_Percent,
         Volatility,
         Volume
-    FROM Sector_Stock_Aggregate;
+    FROM
+        Final_Table;
     """
-    
-    # Execute the query to create and populate the Fact_Sector_Stock_Performance table
-    conn.execute(query)
-    
-    # Leave the connection open for further tasks (do not close it here)
-    
-    return "Fact_Sector_Stock_Performance table created and populated successfully."
 
+    # Execute the query to create and populate the table
+    conn.execute(query)
+
+    # Keep the connection open for further tasks or close it if not needed
+    conn.close()
+
+    return "Fact_Sector_Stock_Performance table created successfully"
 # Let's check if everything is correct
 
 def view_fact_sector_stock_performance():
