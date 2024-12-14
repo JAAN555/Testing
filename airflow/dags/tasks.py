@@ -603,6 +603,97 @@ def verify_new_table():
     describe_new_table()
 
 
+# Let's start with star schema, at first let's create table "Dim_Movie"
+
+#DUCKDB_PATH = "data/warehouse.duckdb"
+#duckdb_connection = duckdb.connect(DUCKDB_PATH)
+DUCKDB_PATH = "data/warehouse.duckdb"
+
+def create_dim_movie():
+    conn = duckdb.connect(DUCKDB_PATH)
+    
+    query = """
+    CREATE TABLE Dim_Movie AS
+    WITH Genre_Flags AS (
+        SELECT 
+            Movie_ID,
+            Title,
+            Release_Date,
+            Original_Language AS Language,  -- Renaming Original_Language to Language
+            CASE WHEN Action = 1 THEN 'Action' ELSE NULL END AS Genre_Action,
+            CASE WHEN Adventure = 1 THEN 'Adventure' ELSE NULL END AS Genre_Adventure,
+            CASE WHEN Comedy = 1 THEN 'Comedy' ELSE NULL END AS Genre_Comedy,
+            CASE WHEN Drama = 1 THEN 'Drama' ELSE NULL END AS Genre_Drama
+            -- Add additional genres here as needed
+        FROM movies
+    )
+    -- Unpivot the genres
+    SELECT 
+        Movie_ID,
+        Title,
+        Release_Date,
+        Language,  -- Using the renamed Language field
+        Genre
+    FROM Genre_Flags
+    UNPIVOT (Genre FOR Genre_Type IN (
+        Genre_Action,
+        Genre_Adventure,
+        Genre_Comedy,
+        Genre_Drama
+        -- Add additional genre columns here as needed
+    )) AS Unpivoted
+    WHERE Genre IS NOT NULL;
+    """
+    
+    # Execute the query to create the Dim_Movie table
+    conn.execute(query)
+    
+    # Leave the connection open for further tasks
+    # Do not close it here to keep the connection alive if needed later
+    
+    return "Dim_Movie table created successfully"
+
+# Verification task functions
+def view_dim_movie():
+    conn = duckdb.connect(DUCKDB_PATH)
+    result = conn.execute("SELECT * FROM Dim_Movie LIMIT 5").fetchdf()
+    print(result)
+
+def count_dim_movie():
+    conn = duckdb.connect(DUCKDB_PATH)
+    row_count = conn.execute("SELECT COUNT(*) AS total_rows FROM Dim_Movie").fetchone()
+    print(f"Total rows in Dim_Movie table: {row_count[0]}")
+
+def describe_dim_movie():
+    conn = duckdb.connect(DUCKDB_PATH)
+    schema = conn.execute("DESCRIBE Dim_Movie").fetchdf()
+    print(schema)
+
+def check_dim_movie_exists():
+    conn = duckdb.connect(DUCKDB_PATH)
+    tables = conn.execute("SHOW TABLES").fetchdf()
+    if 'Dim_Movie' in tables.values:
+        print("The 'Dim_Movie' table exists.")
+    else:
+        print("The 'Dim_Movie' table does not exist.")
+
+def verify_dim_movie():
+    view_dim_movie()
+    count_dim_movie()
+    describe_dim_movie()
+    check_dim_movie_exists()
+
+
+
+
+
+
+
+
+
+
+
+
 
 # Define the Airflow DAG
 default_args = {
@@ -791,8 +882,24 @@ verify_new_table_task = PythonOperator(
     python_callable=verify_new_table,
     dag=dag,
 )
+
+
+
+# Airflow task to create the Dim_Movie table
+create_dim_movie_task = PythonOperator(
+    task_id='create_dim_movie',
+    python_callable=create_dim_movie,
+    dag=dag,
+)
+
+# Airflow task to verify the Dim_Movie table
+verify_dim_movie_task = PythonOperator(
+    task_id='verify_dim_movie',
+    python_callable=verify_dim_movie,
+    dag=dag,
+)
 #download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
 #clean_genres_task >> filter_task >> load_movies_task
 #filter_task
 
-download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >> load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >> load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task
