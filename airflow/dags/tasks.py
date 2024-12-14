@@ -801,10 +801,97 @@ def verify_dim_company_sector():
     check_dim_company_sector_exists()
 
 
+# Now let's create fact table Fact_Sector_Stock_Performance
 
+# Path to the DuckDB database
+DUCKDB_PATH = "data/warehouse.duckdb"
 
+def create_fact_sector_stock_performance():
+    # Establish a connection to DuckDB
+    conn = duckdb.connect(DUCKDB_PATH)
+    
+    # SQL query to create the Fact_Sector_Stock_Performance table and insert aggregated data
+    query = """
+    CREATE TABLE IF NOT EXISTS Fact_Sector_Stock_Performance AS
+    WITH Sector_Stock_Aggregate AS (
+        SELECT
+            s.Date,
+            sc.Sector_ID,
+            AVG(s.Close) AS Average_Close_Price,
+            ((AVG(s.Close) - LAG(AVG(s.Close)) OVER (PARTITION BY sc.Sector_ID ORDER BY s.Date)) / LAG(AVG(s.Close)) OVER (PARTITION BY sc.Sector_ID ORDER BY s.Date)) * 100 AS Price_Change_Percent,
+            STDDEV(s.Close) AS Volatility,
+            SUM(s.Volume) AS Volume
+        FROM stocks s
+        JOIN Dim_Company_Sector sc ON s.Stock_ID = sc.Symbol
+        GROUP BY s.Date, sc.Sector_ID
+    )
+    -- Insert the aggregated data into Fact_Sector_Stock_Performance
+    SELECT 
+        Sector_ID,
+        Date,
+        Average_Close_Price,
+        Price_Change_Percent,
+        Volatility,
+        Volume
+    FROM Sector_Stock_Aggregate;
+    """
+    
+    # Execute the query to create and populate the Fact_Sector_Stock_Performance table
+    conn.execute(query)
+    
+    # Leave the connection open for further tasks (do not close it here)
+    
+    return "Fact_Sector_Stock_Performance table created and populated successfully."
 
+# Let's check if everything is correct
 
+def view_fact_sector_stock_performance():
+    # Set Pandas options to display all rows and columns
+    pd.set_option('display.max_columns', None)  # Show all columns
+    pd.set_option('display.max_rows', None)     # Show all rows
+    pd.set_option('display.max_colwidth', None) # Show full content of each column
+    pd.set_option('display.width', None)        # Set unlimited width for large dataframes
+
+    # Connect to DuckDB and execute the query
+    conn = duckdb.connect(DUCKDB_PATH)
+    result = conn.execute("SELECT * FROM Fact_Sector_Stock_Performance LIMIT 84").fetchdf()
+
+    # Print the result DataFrame
+    print(result)
+
+    # Reset the display options to avoid affecting other parts of the program
+    pd.reset_option('display.max_columns')
+    pd.reset_option('display.max_rows')
+    pd.reset_option('display.max_colwidth')
+    pd.reset_option('display.width')
+
+# Count the number of rows in the Fact_Sector_Stock_Performance table
+def count_fact_sector_stock_performance():
+    conn = duckdb.connect(DUCKDB_PATH)
+    row_count = conn.execute("SELECT COUNT(*) AS total_rows FROM Fact_Sector_Stock_Performance").fetchone()
+    print(f"Total rows in Fact_Sector_Stock_Performance table: {row_count[0]}")
+
+# Describe the schema of the Fact_Sector_Stock_Performance table
+def describe_fact_sector_stock_performance():
+    conn = duckdb.connect(DUCKDB_PATH)
+    schema = conn.execute("DESCRIBE Fact_Sector_Stock_Performance").fetchdf()
+    print(schema)
+
+# Check if the Fact_Sector_Stock_Performance table exists in the DuckDB database
+def check_fact_sector_stock_performance_exists():
+    conn = duckdb.connect(DUCKDB_PATH)
+    tables = conn.execute("SHOW TABLES").fetchdf()
+    if 'Fact_Sector_Stock_Performance' in tables.values:
+        print("The 'Fact_Sector_Stock_Performance' table exists.")
+    else:
+        print("The 'Fact_Sector_Stock_Performance' table does not exist.")
+
+# Combine all verification functions to verify the Fact_Sector_Stock_Performance table
+def verify_fact_sector_stock_performance():
+    view_fact_sector_stock_performance()
+    count_fact_sector_stock_performance()
+    describe_fact_sector_stock_performance()
+    check_fact_sector_stock_performance_exists()
 
 
 
@@ -1027,6 +1114,21 @@ verify_dim_company_sector_task = PythonOperator(
     dag=dag,
 )
 
+# Airflow task to create the Fact_Sector_Stock_Performance table
+create_fact_sector_stock_performance_task = PythonOperator(
+    task_id='create_fact_sector_stock_performance',
+    python_callable=create_fact_sector_stock_performance,
+    dag=dag,
+)
+
+# Airflow task to verify the Fact_Sector_Stock_Performance table
+verify_fact_sector_stock_performance_task = PythonOperator(
+    task_id='verify_fact_sector_stock_performance',
+    python_callable=verify_fact_sector_stock_performance,
+    dag=dag,
+)
+
+
 
 recreate_task = PythonOperator(
     task_id='recreate_tables_task',
@@ -1037,5 +1139,5 @@ recreate_task = PythonOperator(
 #clean_genres_task >> filter_task >> load_movies_task
 #filter_task
 
-download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> recreate_task
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> create_fact_sector_stock_performance_task >> verify_fact_sector_stock_performance_task >> recreate_task
 #create_dim_company_sector_task >> verify_dim_company_sector_task
