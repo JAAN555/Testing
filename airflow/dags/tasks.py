@@ -373,17 +373,36 @@ DUCKDB_PATH = "data/warehouse.duckdb"
 duckdb_connection = duckdb.connect(DUCKDB_PATH)
 
 def load_stocks_to_duckdb():
-    # Load stocks data
+    # Load stocks data, excluding symbols_valid_meta.csv
     stocks_files = glob.glob(os.path.join(STOCKS_FOLDER, "*.csv"))
     all_stocks = []
+    # Assuming STOCKS_FOLDER is defined elsewhere
+    meta_file_path = os.path.join(STOCKS_FOLDER, "symbols_valid_meta.csv")
 
+    # Load the CSV file into a Pandas DataFrame
+    meta_df = pd.read_csv(meta_file_path)
+
+    # Use DuckDB's from_df method to directly create a table from the DataFrame
+    duckdb_connection.execute("CREATE OR REPLACE TABLE symbols_valid_meta AS SELECT * FROM meta_df")
+
+    print("symbols_valid_meta table loaded into DuckDB.")   
+
+    # Process all other CSV files and add Stock_ID based on filename
     for file in stocks_files:
+        if os.path.basename(file) == "symbols_valid_meta.csv":
+            continue  # Skip the meta file, already loaded separately
+        
+        # Load CSV data
         df = pd.read_csv(file)
+        
+        # Create the Stock_ID based on the filename (e.g., Stock_A, Stock_AA, Stock_LGF.B)
+        stock_id = "Stock_" + os.path.splitext(os.path.basename(file))[0]
+        df['Stock_ID'] = stock_id  # Add the Stock_ID feature
+        
         all_stocks.append(df)
 
     # Combine all stock data into one DataFrame
     combined_stocks = pd.concat(all_stocks, ignore_index=True)
-    combined_stocks['Stock_ID'] = range(1, len(combined_stocks) + 1)  # Add a unique Stock_ID
 
     # Store in DuckDB
     duckdb_connection.execute("CREATE OR REPLACE TABLE stocks AS SELECT * FROM combined_stocks")
@@ -419,7 +438,7 @@ default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
     'start_date': datetime(2024, 12, 12),
-    'retries': 1,
+    'retries': 5,
 }
 
 dag = DAG(
