@@ -613,7 +613,7 @@ def create_dim_movie():
     conn = duckdb.connect(DUCKDB_PATH)
     
     query = """
-    CREATE TABLE Dim_Movie AS
+    CREATE TABLE IF NOT EXISTS Dim_Movie AS
     WITH Genre_Flags AS (
         SELECT 
             Movie_ID,
@@ -684,7 +684,106 @@ def verify_dim_movie():
     check_dim_movie_exists()
 
 
+# Now let's create a table Dim_Company_Sector
 
+DUCKDB_PATH = "data/warehouse.duckdb"
+
+def create_dim_company_sector():
+    conn = duckdb.connect(DUCKDB_PATH)  # Connect to the database
+
+    query = """
+CREATE TABLE IF NOT EXISTS Dim_Company_Sector AS
+WITH OrderedData AS (
+    SELECT 
+        Symbol,
+        "Security Name",
+        Sector_Name,
+        "Market Category",
+        ROW_NUMBER() OVER (ORDER BY "Security Name", Symbol) AS original_order
+    FROM symbols_valid_meta
+),
+CompanyData AS (
+    SELECT 
+        Symbol,
+        "Security Name",
+        Sector_Name,
+        "Market Category",
+        original_order,
+        DENSE_RANK() OVER (ORDER BY "Security Name") AS Company_ID
+    FROM OrderedData
+),
+SectorData AS (
+    SELECT 
+        Symbol,
+        "Security Name",
+        Sector_Name,
+        "Market Category",
+        original_order,
+        Company_ID,
+        DENSE_RANK() OVER (ORDER BY Sector_Name) AS Sector_ID
+    FROM CompanyData
+)
+SELECT 
+    Company_ID,
+    Symbol,
+    "Security Name",
+    Sector_ID,
+    Sector_Name,
+    "Market Category"
+FROM SectorData
+ORDER BY original_order;
+    """
+    # Execute the query to create the Dim_Company_Sector table
+    conn.execute(query)
+    
+    # Return a success message
+    return "Dim_Company_Sector table created successfully"
+
+# Verification task functions for Dim_Company_Sector
+def view_dim_company_sector():
+    # Set Pandas options to display all rows and columns
+    pd.set_option('display.max_columns', None)  # Show all columns
+    pd.set_option('display.max_rows', None)     # Show all rows
+    pd.set_option('display.max_colwidth', None) # Show full content of each column
+    pd.set_option('display.width', None)        # Set unlimited width for large dataframes
+
+    # Connect to DuckDB and execute the query
+    conn = duckdb.connect(DUCKDB_PATH)
+    result = conn.execute("SELECT * FROM Dim_Company_Sector LIMIT 84").fetchdf()
+
+    # Print the result DataFrame
+    print(result)
+
+    # Reset the display options to avoid affecting other parts of the program
+    pd.reset_option('display.max_columns')
+    pd.reset_option('display.max_rows')
+    pd.reset_option('display.max_colwidth')
+    pd.reset_option('display.width')
+
+
+def count_dim_company_sector():
+    conn = duckdb.connect(DUCKDB_PATH)
+    row_count = conn.execute("SELECT COUNT(*) AS total_rows FROM Dim_Company_Sector").fetchone()
+    print(f"Total rows in Dim_Company_Sector table: {row_count[0]}")
+
+def describe_dim_company_sector():
+    conn = duckdb.connect(DUCKDB_PATH)
+    schema = conn.execute("DESCRIBE Dim_Company_Sector").fetchdf()
+    print(schema)
+
+def check_dim_company_sector_exists():
+    conn = duckdb.connect(DUCKDB_PATH)
+    tables = conn.execute("SHOW TABLES").fetchdf()
+    if 'Dim_Company_Sector' in tables.values:
+        print("The 'Dim_Company_Sector' table exists.")
+    else:
+        print("The 'Dim_Company_Sector' table does not exist.")
+
+def verify_dim_company_sector():
+    view_dim_company_sector()
+    count_dim_company_sector()
+    describe_dim_company_sector()
+    check_dim_company_sector_exists()
 
 
 
@@ -700,7 +799,7 @@ default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
     'start_date': datetime(2024, 12, 12),
-    'retries': 5,
+    'retries': 1000,
 }
 
 dag = DAG(
@@ -898,8 +997,24 @@ verify_dim_movie_task = PythonOperator(
     python_callable=verify_dim_movie,
     dag=dag,
 )
+
+# Airflow task to create the Dim_Company_Sector table
+create_dim_company_sector_task = PythonOperator(
+    task_id='create_dim_company_sector',
+    python_callable=create_dim_company_sector,
+    dag=dag,
+)
+
+# Airflow task to verify the Dim_Company_Sector table
+verify_dim_company_sector_task = PythonOperator(
+    task_id='verify_dim_company_sector',
+    python_callable=verify_dim_company_sector,
+    dag=dag,
+)
+
 #download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
 #clean_genres_task >> filter_task >> load_movies_task
 #filter_task
 
-download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >> load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >> load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task
+#create_dim_company_sector_task >> verify_dim_company_sector_task
