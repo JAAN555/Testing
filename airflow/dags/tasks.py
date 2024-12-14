@@ -177,6 +177,30 @@ def clean_and_split_genres(input_file: str, output_file: str):
         print(f"Error while cleaning and splitting genres: {e}")
         raise
 
+def clean_release_date(input_file: str, output_file: str):
+    try:
+        import pandas as pd
+        import re
+
+        # Load the dataset
+        df = pd.read_csv(input_file, encoding='utf-8', on_bad_lines='skip', engine='python')
+
+        # Ensure the Release_Date column exists
+        if 'Release_Date' not in df.columns:
+            raise ValueError("The dataset does not have a 'Release_Date' column.")
+
+        # Define a regex pattern for valid dates (YYYY-MM-DD)
+        date_pattern = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+        # Filter rows with valid dates
+        df = df[df['Release_Date'].apply(lambda x: bool(date_pattern.match(str(x))) if pd.notnull(x) else False)]
+
+        # Save the cleaned dataset
+        df.to_csv(output_file, index=False)
+        print(f"Cleaned dataset saved to {output_file}")
+    except Exception as e:
+        print(f"Error during cleaning process: {e}")
+
 #script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Test ends
@@ -360,6 +384,7 @@ def recreate_tables():
 
     finally:
         conn.close()
+        return("task concluded!")
 
 
 # Testing again
@@ -1084,24 +1109,24 @@ def create_dim_time():
             MIN(Date) AS MinDate,
             MAX(Date) AS MaxDate
         FROM (
-            SELECT MIN(Release_Date) AS Date FROM movies_data_source
+            SELECT MIN(Release_Date) AS Date FROM movies WHERE Release_Date IS NOT NULL AND Release_Date != ' - Dust Up'
             UNION ALL
-            SELECT MIN(Date) AS Date FROM stocks_data_source
+            SELECT MIN(Date) AS Date FROM stocks WHERE Date IS NOT NULL
         ) AS CombinedDates
     ),
     Dates_Generated AS (
         SELECT 
-            Date::DATE AS Date,
-            EXTRACT(YEAR FROM Date) AS Year,
-            EXTRACT(MONTH FROM Date) AS Month,
-            EXTRACT(DAY FROM Date) AS Day,
-            CEIL(EXTRACT(MONTH FROM Date) / 3.0) AS Quarter,
-            TO_CHAR(Date, 'Day') AS Weekday
+            gs.Date::DATE AS Date,
+            EXTRACT(YEAR FROM gs.Date) AS Year,
+            EXTRACT(MONTH FROM gs.Date) AS Month,
+            EXTRACT(DAY FROM gs.Date) AS Day,
+            CEIL(EXTRACT(MONTH FROM gs.Date) / 3.0) AS Quarter,
+            strftime('%A', gs.Date) AS Weekday  -- Use strftime to get the full weekday name
         FROM generate_series(
-            (SELECT MinDate FROM MinMaxDates), 
-            (SELECT MaxDate FROM MinMaxDates), 
+            (SELECT MIN(Release_Date)::TIMESTAMP FROM movies WHERE Release_Date IS NOT NULL AND Release_Date != ' - Dust Up'),  -- Filter invalid values
+            (SELECT MAX(Date)::TIMESTAMP FROM stocks WHERE Date IS NOT NULL),  -- Filter invalid values
             '1 day'::INTERVAL
-        ) AS Date
+        ) AS gs(Date)  -- Alias the generated series to 'gs'
     )
     SELECT 
         Date,
@@ -1113,7 +1138,6 @@ def create_dim_time():
     FROM Dates_Generated;
     """
     conn.execute(query)
-
 
 
 
@@ -1136,7 +1160,7 @@ def check_dim_time_exists():
         print("The 'Dim_Time' table does not exist.")
 
 def verify_dim_time():
-    view_dim_time()
+    # view_dim_time() #I do not know if said function ever existed, but this might be important
     count_dim_time()
     describe_dim_time()
     check_dim_time_exists()   
@@ -1408,9 +1432,16 @@ verify_dim_time_task = PythonOperator(
     dag=dag,
 )
 
+clean_release_dates_task = PythonOperator(
+    task_id='clean_release_dates',
+    python_callable=clean_release_date,
+    op_args=[input_file, input_file],
+    dag=dag,
+)
+
 #download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
 #clean_genres_task >> filter_task >> load_movies_task
 #filter_task
 
-download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> create_fact_sector_stock_performance_task >> verify_fact_sector_stock_performance_task >> create_fact_movie_impact_task >> verify_fact_movie_impact_task >> create_dim_time_task >> verify_dim_time_task >> recreate_task
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_release_dates_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> create_fact_sector_stock_performance_task >> verify_fact_sector_stock_performance_task >> create_fact_movie_impact_task >> verify_fact_movie_impact_task >> create_dim_time_task >> verify_dim_time_task >> recreate_task
 #create_dim_company_sector_task >> verify_dim_company_sector_task
