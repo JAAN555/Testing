@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import zipfile
 import mlcroissant as mlc
+import glob
 
 #from scripts.ingest_from_kaggle import ingest_data_from_kagglehub
 #from scripts.data_filtering import filter_files
@@ -222,6 +223,197 @@ def filter_files(input_path, output_path, meta_file_path):
 # Done
 
 
+'''
+def load_csv_to_duckdb(con, file_paths, table_prefix):
+    """
+    Load CSV files into DuckDB tables with specific handling for the problematic file LGF.B.csv.
+    
+    :param con: DuckDB connection object
+    :param file_paths: List of file paths to CSV files
+    :param table_prefix: Prefix for the table names
+    """
+    for file in file_paths:
+        # Extract table name from file name
+        table_name = os.path.basename(file).replace('.csv', '')
+
+        try:
+            # Special handling for LGF.B.csv
+            if 'LGF.B.csv' in file:
+                print(f"Handling special case for {file}...")
+                # Load with additional options to handle the file correctly
+                con.execute(f"""
+                    CREATE OR REPLACE TABLE {table_prefix}_{table_name} AS
+                    SELECT * FROM read_csv_auto('{file}', NULL, ',', true, true)
+                """)
+                print(f"Special case table {table_prefix}_{table_name} created and data loaded successfully.")
+            else:
+                # General case for other CSV files
+                con.execute(f"""
+                    CREATE OR REPLACE TABLE {table_prefix}_{table_name} AS
+                    SELECT * FROM read_csv_auto('{file}')
+                """)
+                print(f"Table {table_prefix}_{table_name} created and data loaded successfully.")
+        
+        except Exception as e:
+            # Log the error without skipping the file
+            print(f"Error loading file {file} into DuckDB table {table_prefix}_{table_name}: {e}")
+            # Store error information for later troubleshooting (could be written to a log file or database)
+            with open("load_errors.log", "a") as log_file:
+                log_file.write(f"Error loading {file}: {e}\n")
+
+
+def export_duckdb_to_csv(con, table_name, output_dir):
+    """
+    Export data from DuckDB table to CSV for human-readable access.
+    
+    :param con: DuckDB connection object
+    :param table_name: The DuckDB table name to export
+    :param output_dir: The directory to save the CSV file
+    """
+    try:
+        output_file = os.path.join(output_dir, f"{table_name}.csv")
+        con.execute(f"EXPORT TO CSV '{output_file}' FROM SELECT * FROM {table_name}")
+        print(f"Table {table_name} exported to {output_file} successfully.")
+    except Exception as e:
+        print(f"Error exporting {table_name} to CSV: {e}")
+        with open("export_errors.log", "a") as log_file:
+            log_file.write(f"Error exporting {table_name}: {e}\n")
+
+
+def load_data_task():
+    """
+    Task to load CSV files into DuckDB and export them to CSV for human-readable access.
+    """
+    # Paths for stock and movie data
+    stocks_path = 'data/stocks/'
+    movies_path = 'data/movies/'
+
+    # Get list of all CSV files in the directories
+    stocks_files = glob.glob(os.path.join(stocks_path, '*.csv'))
+    movies_files = glob.glob(os.path.join(movies_path, '*.csv'))
+
+    # Step 1: Connect to DuckDB (connection will be reused for all tasks)
+    con = duckdb.connect('data/combined.duckdb')  # Path for the DuckDB database file
+    
+    # Load stock and movie files into DuckDB
+    load_csv_to_duckdb(con, stocks_files, 'stock')
+    load_csv_to_duckdb(con, movies_files, 'movie')
+
+    # Optionally, export the tables to CSV for human readability
+    output_dir = 'data/output_csv'
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # Get list of all table names dynamically (instead of hardcoding)
+    # This assumes you have a method of tracking the tables you've created, like querying the DuckDB system tables
+    tables_to_export = con.execute("SELECT table_name FROM information_schema.tables WHERE table_schema='main'").fetchall()
+    
+    for table in tables_to_export:
+        table_name = table[0]  # Extract table name from result
+        # Export each loaded table to CSV
+        export_duckdb_to_csv(con, table_name, output_dir)
+
+    # Do not close the connection, as it may be reused in later tasks
+    return con
+'''
+
+
+# Testing again
+
+# Define paths
+MOVIES_FOLDER = "data/movies"
+STOCKS_FOLDER = "data/stocks"
+DUCKDB_PATH = "data/warehouse.duckdb"
+
+# Shared DuckDB connection (file-backed for persistence)
+duckdb_connection = duckdb.connect(DUCKDB_PATH)
+
+def load_movies_to_duckdb():
+    # Load movies data
+    movies_files = glob.glob(os.path.join(MOVIES_FOLDER, "*.csv"))
+    all_movies = []
+
+    for file in movies_files:
+        df = pd.read_csv(file)
+        all_movies.append(df)
+
+    combined_movies = pd.concat(all_movies)
+    combined_movies['Movie_ID'] = range(1, len(combined_movies) + 1)  # Add unique Movie_ID
+        
+    # Store in DuckDB
+    duckdb_connection.execute("CREATE OR REPLACE TABLE movies AS SELECT * FROM combined_movies")
+    print("Movies table loaded into DuckDB.")
+
+
+
+# Verification Functions
+def view_movies():
+    result = duckdb_connection.execute("SELECT * FROM movies LIMIT 10").fetchdf()
+    print(result)
+
+def count_movies():
+    row_count = duckdb_connection.execute("SELECT COUNT(*) AS total_rows FROM movies").fetchone()
+    print(f"Total rows in movies table: {row_count[0]}")
+
+def describe_movies():
+    schema = duckdb_connection.execute("DESCRIBE movies").fetchdf()
+    print(schema)
+
+def check_table_exists():
+    tables = duckdb_connection.execute("SHOW TABLES").fetchdf()
+    print(tables)
+
+
+# Now we load stocks within DuckDB database
+
+# Paths to data folders
+STOCKS_FOLDER = "data/stocks"
+DUCKDB_PATH = "data/warehouse.duckdb"
+
+# Shared DuckDB connection (file-backed for persistence)
+duckdb_connection = duckdb.connect(DUCKDB_PATH)
+
+def load_stocks_to_duckdb():
+    # Load stocks data
+    stocks_files = glob.glob(os.path.join(STOCKS_FOLDER, "*.csv"))
+    all_stocks = []
+
+    for file in stocks_files:
+        df = pd.read_csv(file)
+        all_stocks.append(df)
+
+    # Combine all stock data into one DataFrame
+    combined_stocks = pd.concat(all_stocks, ignore_index=True)
+    combined_stocks['Stock_ID'] = range(1, len(combined_stocks) + 1)  # Add a unique Stock_ID
+
+    # Store in DuckDB
+    duckdb_connection.execute("CREATE OR REPLACE TABLE stocks AS SELECT * FROM combined_stocks")
+    print("Stocks table loaded into DuckDB.")
+
+    # Optionally, print out the first few rows of the loaded data for verification
+    print(duckdb_connection.execute("SELECT * FROM stocks LIMIT 5").fetchall())
+
+# Verification Functions for Stocks
+def view_stocks():
+    result = duckdb_connection.execute("SELECT * FROM stocks LIMIT 10").fetchdf()
+    print(result)
+
+def count_stocks():
+    row_count = duckdb_connection.execute("SELECT COUNT(*) AS total_rows FROM stocks").fetchone()
+    print(f"Total rows in stocks table: {row_count[0]}")
+
+def describe_stocks():
+    schema = duckdb_connection.execute("DESCRIBE stocks").fetchdf()
+    print(schema)
+
+def check_stocks_table_exists():
+    tables = duckdb_connection.execute("SHOW TABLES").fetchdf()
+    if 'stocks' in tables.values:
+        print("The 'stocks' table exists.")
+    else:
+        print("The 'stocks' table does not exist.")
+
+
+
 # Define the Airflow DAG
 default_args = {
     'owner': 'airflow',
@@ -253,7 +445,7 @@ download_stock_market_task = PythonOperator(
     python_callable=ingest_data_from_kagglehub,
     op_args=['jacksoncrow/stock-market-dataset'],  # Dataset ID for stock market
     op_kwargs={'zip_file_path': 'stock-market-dataset.zip', 'location':'stocks_raw'},
-    dag=dag
+    dag=dag,
 )
 '''   # Define paths
 base_path = './data/'
@@ -345,6 +537,61 @@ fix_the_filename_repitition_error_in_stocks = PythonOperator(
     dag=dag,
 )
 
+
+
+# Set the paths for the stocks and movies data
+stocks_path = os.path.abspath('./data/stocks')  # Path to the stocks data directory
+movies_path = os.path.abspath('./data/movies')  # Path to the movies data directory
+db_path = os.path.abspath('./data/duckdb.db')  # Path to the DuckDB database
+'''
+load_and_export_task = PythonOperator(
+    task_id='load_and_export_duckdb',
+    python_callable=load_data_task,
+    dag=dag,
+)
+'''
+load_movies_task = PythonOperator(
+    task_id="load_movies",
+    python_callable=load_movies_to_duckdb,
+    dag = dag,
+)
+
+def verify_movies():
+    view_movies()
+    check_table_exists()
+    count_movies()
+    describe_movies()
+
+verify_task = PythonOperator(
+    task_id="verify_movies",
+    python_callable=verify_movies,
+    dag=dag
+)
+
+
+
+
+load_stocks_task = PythonOperator(
+    task_id="load_stocks",
+    python_callable=load_stocks_to_duckdb,
+    dag = dag,
+)
+
+
+def verify_stocks():
+    view_stocks()
+    check_stocks_table_exists()
+    count_stocks()
+    describe_stocks()
+
+verify_task2 = PythonOperator(
+    task_id="verify_stocks",
+    python_callable=verify_stocks,
+    dag=dag
+)
+
 #download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
-clean_genres_task >> filter_task
+#clean_genres_task >> filter_task >> load_movies_task
 #filter_task
+
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >> load_movies_task >> verify_task >> load_stocks_task >> verify_task2
