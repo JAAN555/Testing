@@ -331,6 +331,8 @@ def recreate_tables():
         verify_dim_company_sector()
         create_fact_sector_stock_performance()
         verify_fact_sector_stock_performance()
+        create_fact_movie_impact_task()
+        verify_fact_movie_impact_task()
         
 
         pd.set_option('display.max_columns', None)  # Show all columns
@@ -341,10 +343,12 @@ def recreate_tables():
         # Connect to DuckDB and execute the query
         conn = duckdb.connect(DUCKDB_PATH)
         result = conn.execute("SELECT * FROM Fact_Sector_Stock_Performance LIMIT 100").fetchdf()
-
+        result2 = conn.execute("SELECT * FROM Fact_Movie_Impact LIMIT 100").fetchdf()
         # Print the result DataFrame
         print(result)
-
+        #volatility_values = conn.execute("SELECT Volatility FROM Fact_Sector_Stock_Performance").fetchdf()
+        #print("Volatility Values:")
+        #print(volatility_values)
         # Reset the display options to avoid affecting other parts of the program
         pd.reset_option('display.max_columns')
         pd.reset_option('display.max_rows')
@@ -837,14 +841,21 @@ def create_fact_sector_stock_performance():
     conn = duckdb.connect(DUCKDB_PATH)
 
     # Define the query to create and populate the Fact_Sector_Stock_Performance table
-    query = """
+    '''query = """
     CREATE TABLE IF NOT EXISTS Fact_Sector_Stock_Performance AS
     WITH Sector_Stock_Data AS (
         SELECT
             stocks.Date,
             Dim_Company_Sector.Sector_ID,
             AVG(stocks.Close) AS Average_Close_Price,
-            STDDEV(stocks.Close) AS Volatility,
+            --STDDEV(stocks.Close) AS Volatility,
+            STDDEV(AVG(stocks.Close) - LAG(AVG(stocks.Close)) OVER (
+                PARTITION BY Dim_Company_Sector.Sector_ID 
+                ORDER BY stocks.Date
+            )) OVER (
+                PARTITION BY Dim_Company_Sector.Sector_ID 
+                ORDER BY stocks.Date
+            ) AS Volatility,
             SUM(stocks.Volume) AS Volume
         FROM
             stocks
@@ -886,12 +897,64 @@ def create_fact_sector_stock_performance():
     FROM
         Final_Table;
     """
+    '''
 
+    query = """CREATE TABLE IF NOT EXISTS Fact_Sector_Stock_Performance AS
+WITH Sector_Averages AS (
+    SELECT
+        stocks.Date,
+        Dim_Company_Sector.Sector_ID,
+        AVG(stocks.Close) AS Average_Close_Price,
+        SUM(stocks.Volume) AS Volume
+    FROM
+        stocks
+    JOIN
+        Dim_Company_Sector
+        ON stocks.Stock_ID = Dim_Company_Sector.Symbol
+    GROUP BY
+        stocks.Date, Dim_Company_Sector.Sector_ID
+),
+Sector_Lags AS (
+    SELECT
+        Date,
+        Sector_ID,
+        Average_Close_Price,
+        Volume,
+        LAG(Average_Close_Price) OVER (
+            PARTITION BY Sector_ID 
+            ORDER BY Date
+        ) AS Previous_Close_Price
+    FROM
+        Sector_Averages
+),
+Sector_Volatility AS (
+    SELECT
+        Date,
+        Sector_ID,
+        Average_Close_Price,
+        Volume,
+        Previous_Close_Price,
+        STDDEV(Average_Close_Price - Previous_Close_Price) OVER (
+            PARTITION BY Sector_ID 
+            ORDER BY Date
+        ) AS Volatility
+    FROM
+        Sector_Lags
+)
+SELECT
+    Date,
+    Sector_ID,
+    Average_Close_Price,
+    Volatility,
+    Volume,
+    Previous_Close_Price
+FROM
+    Sector_Volatility;"""
     # Execute the query to create and populate the table
     conn.execute(query)
 
     # Keep the connection open for further tasks or close it if not needed
-    conn.close()
+    #conn.close() # Keep it closed right now
 
     return "Fact_Sector_Stock_Performance table created successfully"
 # Let's check if everything is correct
@@ -944,6 +1007,70 @@ def verify_fact_sector_stock_performance():
     describe_fact_sector_stock_performance()
     check_fact_sector_stock_performance_exists()
 
+# Let's create Fact_Movie_Impact
+
+DUCKDB_PATH = "data/warehouse.duckdb"
+
+def create_fact_movie_impact():
+    conn = duckdb.connect(DUCKDB_PATH)
+    query = """
+CREATE TABLE IF NOT EXISTS Fact_Movie_Impact AS
+    SELECT
+        movies.Movie_ID,
+        movies.Popularity AS Popularity_Score,
+        movies.Vote_Average,
+        movies.Release_Date,
+        Dim_Company_Sector.Sector_ID
+    FROM movies
+    JOIN Dim_Movie ON movies.Movie_ID = Dim_Movie.Movie_ID
+    
+    """
+    conn.execute(query)
+    return "Fact_Movie_Impact table created successfully"
+
+def view_fact_movie_impact():
+    # Set Pandas options to display all rows and columns
+    pd.set_option('display.max_columns', None)  # Show all columns
+    pd.set_option('display.max_rows', None)     # Show all rows
+    pd.set_option('display.max_colwidth', None) # Show full content of each column
+    pd.set_option('display.width', None)        # Set unlimited width for large dataframes
+
+    # Connect to DuckDB and execute the query
+    conn = duckdb.connect(DUCKDB_PATH)
+    result = conn.execute("SELECT * FROM Fact_Movie_Impact LIMIT 84").fetchdf()
+
+    # Print the result DataFrame
+    print(result)
+
+    # Reset the display options to avoid affecting other parts of the program
+    pd.reset_option('display.max_columns')
+    pd.reset_option('display.max_rows')
+    pd.reset_option('display.max_colwidth')
+    pd.reset_option('display.width')
+
+def count_fact_movie_impact():
+    conn = duckdb.connect(DUCKDB_PATH)
+    row_count = conn.execute("SELECT COUNT(*) AS total_rows FROM Fact_Movie_Impact").fetchone()
+    print(f"Total rows in Fact_Movie_Impact table: {row_count[0]}")
+
+def describe_fact_movie_impact():
+    conn = duckdb.connect(DUCKDB_PATH)
+    schema = conn.execute("DESCRIBE Fact_Movie_Impact").fetchdf()
+    print(schema)
+
+def check_fact_movie_impact_exists():
+    conn = duckdb.connect(DUCKDB_PATH)
+    tables = conn.execute("SHOW TABLES").fetchdf()
+    if 'Fact_Movie_Impact' in tables.values:
+        print("The 'Fact_Movie_Impact' table exists.")
+    else:
+        print("The 'Fact_Movie_Impact' table does not exist.")
+
+def verify_fact_movie_impact():
+    view_fact_movie_impact()
+    count_fact_movie_impact()
+    describe_fact_movie_impact()
+    check_fact_movie_impact_exists()
 
 
 
@@ -1179,6 +1306,19 @@ verify_fact_sector_stock_performance_task = PythonOperator(
     dag=dag,
 )
 
+# Airflow task to create the Fact_Movie_Impact table
+create_fact_movie_impact_task = PythonOperator(
+    task_id='create_fact_movie_impact',
+    python_callable=create_fact_movie_impact,
+    dag=dag,
+)
+
+# Airflow task to verify the Fact_Movie_Impact table
+verify_fact_movie_impact_task = PythonOperator(
+    task_id='verify_fact_movie_impact',
+    python_callable=verify_fact_movie_impact,
+    dag=dag,
+)
 
 
 recreate_task = PythonOperator(
@@ -1190,5 +1330,5 @@ recreate_task = PythonOperator(
 #clean_genres_task >> filter_task >> load_movies_task
 #filter_task
 
-download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> create_fact_sector_stock_performance_task >> verify_fact_sector_stock_performance_task >> recreate_task
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> create_fact_sector_stock_performance_task >> verify_fact_sector_stock_performance_task >> create_fact_movie_impact_task >> verify_fact_movie_impact_task >> recreate_task
 #create_dim_company_sector_task >> verify_dim_company_sector_task
