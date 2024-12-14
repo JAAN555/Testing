@@ -315,6 +315,21 @@ def load_data_task():
     # Do not close the connection, as it may be reused in later tasks
     return con
 '''
+# Optional function for us to debug easier - it removes the tables if they have been already created by previous DAG trigger
+DUCKDB_PATH = "data/warehouse.duckdb"
+def recreate_tables():
+    conn = duckdb.connect(DUCKDB_PATH)
+    try:
+        # Drop tables if they exist (optional)
+        conn.execute("DROP TABLE IF EXISTS Dim_Movie")
+        conn.execute("DROP TABLE IF EXISTS Dim_Company_Sector")
+        # Now recreate the tables
+        create_dim_movie()  # Your table creation function
+        verify_dim_movie()
+        create_dim_company_sector()  # Your table creation function
+        verify_dim_company_sector()
+    finally:
+        conn.close()
 
 
 # Testing again
@@ -799,11 +814,11 @@ default_args = {
     'owner': 'airflow',
     'depends_on_past': False,
     'start_date': datetime(2024, 12, 12),
-    'retries': 1000,
+    'retries': 20,
 }
 
 dag = DAG(
-    'download_stock_market_and_movies_datasets',
+    'download_stock_market_dataset',
     default_args=default_args,
     description='A DAG to load data into DuckDB',
     schedule_interval=None,  # Adjust as needed
@@ -1012,9 +1027,15 @@ verify_dim_company_sector_task = PythonOperator(
     dag=dag,
 )
 
+
+recreate_task = PythonOperator(
+    task_id='recreate_tables_task',
+    python_callable=recreate_tables,
+    dag=dag,
+)
 #download_stock_market_task >> download_movies_task >> clean_genres_task >> fix_the_filename_repitition_error_in_stocks
 #clean_genres_task >> filter_task >> load_movies_task
 #filter_task
 
-download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >> load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task
+download_stock_market_task >> fix_the_filename_repitition_error_in_stocks >> filter_task >> download_movies_task >> clean_genres_task >>  load_movies_task >> verify_task >> load_stocks_task >> verify_task2 >> modify_meta_file >> verify_new_table_task >> create_dim_movie_task >> verify_dim_movie_task >> create_dim_company_sector_task >> verify_dim_company_sector_task >> recreate_task
 #create_dim_company_sector_task >> verify_dim_company_sector_task
