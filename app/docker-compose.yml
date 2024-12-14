@@ -1,0 +1,17 @@
+version: '3.8'
+
+services:
+  streamlit_app:
+    build:
+      context: .
+    ports:
+      - "8501:8501"
+    volumes:
+      # Mount the app folder into the container
+      - ./app:/app  
+      # Mount the DuckDB database directory
+      - ./airflow/data:/app/airflow/data  
+    environment:
+      # Environment variable for Streamlit (if needed)
+      STREAMLIT_SERVER_PORT: 8501
+    working_dir: /app  # Ensure the container's working directory is set to /app

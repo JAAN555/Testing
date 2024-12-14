@@ -79,6 +79,7 @@ x-airflow-common:
     - ${AIRFLOW_PROJ_DIR:-.}/plugins:/opt/airflow/plugins
     - ./data:/opt/airflow/data
     - ./data:/opt/airflow/data_raw
+    
     - ./scripts:/opt/airflow/dags/scripts # Pole kindel, võib-olla aitab
   user: "${AIRFLOW_UID:-50000}:0"
   depends_on:
@@ -89,6 +90,9 @@ x-airflow-common:
       condition: service_healthy
 
 services:
+ 
+  
+      
   postgres:
     image: postgres:13
     environment:

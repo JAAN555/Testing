@@ -2,3 +2,7 @@ apache-airflow==2.10.3
 duckdb==0.6.0  # Adjust the version as needed
 psycopg2-binary==2.9.6  # If you are using PostgreSQL as the backend
 #kagglehub
+streamlit
+duckdb
+watchdog
+matplotlib

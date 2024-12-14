@@ -1109,7 +1109,7 @@ def create_dim_time():
             MIN(Date) AS MinDate,
             MAX(Date) AS MaxDate
         FROM (
-            SELECT MIN(Release_Date) AS Date FROM movies WHERE Release_Date IS NOT NULL AND Release_Date != ' - Dust Up'
+            SELECT MIN(Release_Date) AS Date FROM movies WHERE Release_Date IS NOT NULL
             UNION ALL
             SELECT MIN(Date) AS Date FROM stocks WHERE Date IS NOT NULL
         ) AS CombinedDates
@@ -1123,7 +1123,7 @@ def create_dim_time():
             CEIL(EXTRACT(MONTH FROM gs.Date) / 3.0) AS Quarter,
             strftime('%A', gs.Date) AS Weekday  -- Use strftime to get the full weekday name
         FROM generate_series(
-            (SELECT MIN(Release_Date)::TIMESTAMP FROM movies WHERE Release_Date IS NOT NULL AND Release_Date != ' - Dust Up'),  -- Filter invalid values
+            (SELECT MIN(Release_Date)::TIMESTAMP FROM movies WHERE Release_Date IS NOT NULL),  -- Filter invalid values
             (SELECT MAX(Date)::TIMESTAMP FROM stocks WHERE Date IS NOT NULL),  -- Filter invalid values
             '1 day'::INTERVAL
         ) AS gs(Date)  -- Alias the generated series to 'gs'
