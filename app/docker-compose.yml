@@ -6,6 +6,7 @@ services:
       - "8501:8501"
     volumes:
       - ../airflow/data:/airflow/data
+      #- ./airflow/data:/airflow/data
       - ./app:/app
       - ./logs:/app/logs
     environment:
